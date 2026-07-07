@@ -1044,12 +1044,24 @@ async function authGo(){
       console.warn("Railway login indisponível, usando fallback Supabase direto");
     }
 
-    // ── Fallback: Supabase direto (comportamento original, mantido durante a migração) ──
+    // ── Fallback: quando Railway falhou por erro de rede ─────────────────────
+    // Tentar novamente via Railway antes de desistir
     var u=getUsers(),usr=u[em];
     if(!usr){
-      var cloudUser=await getUserCloud(em);
-      if(!cloudUser){showErr("E-mail não encontrado.");return}
-      usr=cloudUser;
+      // Usuário não está no localStorage — tentar Railway novamente
+      var retryRes=await apiCall("/api/auth/login",{method:"POST",body:{email:em,pw:pw}});
+      if(retryRes.ok&&retryRes.data.ok){
+        ls_set("lc-api-token",retryRes.data.token);
+        ls_set("lc-api-email",em);
+        var usr3=retryRes.data.user;
+        ldUser(em);D.userName=usr3.name;D.userEmail=usr3.email||em;D.perfil=usr3.perfil||"autonoma";
+        saveSession(em);sv();boot();syncFromCloud();return;
+      }else if(retryRes.status===401){
+        showErr("Senha incorreta.");return;
+      }else if(retryRes.status===403){
+        showErr(retryRes.data.error||"Assinatura inativa.");return;
+      }
+      showErr("E-mail não encontrado.");return;
     }
     // Se senha local é placeholder do Railway (foi trocada via servidor),
     // não tem como verificar localmente — Railway estava fora, mostrar erro
