@@ -639,20 +639,24 @@ function chipVal(el){var c=el.querySelector(".chip.cpf,.chip.cpj,.chip.cgr,.chip
 //
 // 5. Substitua as variáveis abaixo:
 // ─────────────────────────────────────────────────────────────────────────────
-var SB_URL = "https://nahhjbwzxzewnkjexzpc.supabase.co";
-var SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5haGhqYnd6eHpld25ramV4enBjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk1NDc1OTYsImV4cCI6MjA5NTEyMzU5Nn0.jsnVCPnUt_37axRvwh6F9hgVLfP6J14de-cdEmSQGwI";
+// Etapa 2.7: SB_URL e SB_KEY removidos — acesso direto ao Supabase desativado
+// Todo tráfego passa pelo Railway (proxy seguro)
+var SB_URL = "";
+var SB_KEY = "";
 
-var _cloudEnabled = SB_URL.indexOf("supabase.co") > 0 && SB_KEY.length > 20;
+// Etapa 2.7: acesso direto desativado — Railway é o único canal
+var _cloudEnabled = false;
 
 // ── API RAILWAY (Etapa 2 — migração gradual) ──────────────────────────────────
 // MIGRATION_FLAGS controla quais operações usam o Railway (true) vs Supabase direto (false)
 // Migração rota por rota: começamos só pelo login
 var API_URL = "https://lucrei-whatsapp-production.up.railway.app";
 var MIGRATION_FLAGS = {
-  login: true,    // Etapa 2.1: login migrado para Railway
-  register: true, // Etapa 2.2: cadastro migrado para Railway
-  data: true,     // Etapa 2.3: load/save de dados migrado para Railway
-  password: true  // Etapa 2.4/2.5: troca e recuperação de senha
+  login: true,        // Etapa 2.1
+  register: true,     // Etapa 2.2
+  data: true,         // Etapa 2.3
+  password: true,     // Etapa 2.4/2.5
+  subscription: true  // Etapa 2.6: cancelamento via Railway
 };
 
 async function apiCall(path, opts){
@@ -718,10 +722,8 @@ function saveUsers(u){ls_set(UK,JSON.stringify(u))}
 
 // Save user to cloud
 async function saveUserCloud(email,name,pw,perfil,phone){
-  // Tenta com phone primeiro; se falhar (coluna não existe), tenta sem phone
-  var ok=await sbUpsert("lucrei_users",{email:email,name:name,pw:pw,perfil:perfil,phone:phone||""});
-  if(!ok) ok=await sbUpsert("lucrei_users",{email:email,name:name,pw:pw,perfil:perfil});
-  return ok;
+  // Etapa 2.7: Railway cuida do cadastro — esta função é legado
+  return true;
 }
 
 // ── Gravar subscriptionId após pagamento aprovado pelo Asaas ─────────────────
@@ -761,12 +763,8 @@ async function processAsaasReturn(){
 
 // Get user from cloud (for login on new device)
 async function getUserCloud(email){
-  var row=await sbGet("lucrei_users",{email:email});
-  if(row){
-    // Cache locally
-    var u=getUsers();u[email]={name:row.name,pw:row.pw,perfil:row.perfil,phone:row.phone||"",email:row.email||email};saveUsers(u);
-    return u[email];
-  }
+  // Etapa 2.7: acesso direto ao Supabase desativado
+  // Login multi-dispositivo é gerenciado pelo Railway
   return null;
 }
 
@@ -2508,21 +2506,38 @@ async function cancelarAssinatura(){
   var mt=motivos[parseInt(r)-1]||r;
   if(!confirm("Tem certeza que deseja cancelar a assinatura?\n\n• Conta fica ativa até fim do período pago\n• Cobranças futuras são interrompidas"))return;
   try{
-    // Buscar subscriptionId: D primeiro, depois localStorage, depois Supabase
+    // ── ETAPA 2.6: Cancelamento via Railway ───────────────────
+    if(MIGRATION_FLAGS.subscription){
+      var apiResCancel=await apiCall("/api/subscription/cancel",{
+        method:"POST",
+        body:{motivo:mt}
+      });
+      if(apiResCancel.ok&&apiResCancel.data.ok){
+        alert("✅ Assinatura cancelada com sucesso!\nSua conta permanece ativa até o fim do período. Obrigada! 💜");
+        return;
+      }else if(apiResCancel.data&&apiResCancel.data.fallback){
+        alert("Para cancelar sua assinatura, entre em contato:\nWhatsApp: (67) 99117-4813\nMotivo: "+mt+"\n\nObrigada! 💜");
+        return;
+      }else if(apiResCancel.status!==0&&apiResCancel.status<500){
+        alert("Para cancelar, entre em contato:\nWhatsApp: (67) 99117-4813\nMotivo informado: "+mt);
+        return;
+      }
+      // Erro de rede — cai no fallback abaixo
+      console.warn("Railway indisponível, fallback cancelamento");
+    }
+
+    // ── Fallback: rota legada direta ───────────────────────────
     var sid=D.asaasSubscriptionId||ls_get("_asaas_sub")||null;
     if(!sid&&_cloudEnabled){
       var uRow=await sbGet("lucrei_users",{email:_email||D.userEmail});
       if(uRow&&uRow.subscription_id)sid=uRow.subscription_id;
     }
     if(sid){
-      var res=await fetch("https://lucrei-whatsapp-production.up.railway.app/cancelar-assinatura",
+      var res=await fetch(API_URL+"/cancelar-assinatura",
         {method:"POST",headers:{"Content-Type":"application/json"},
          body:JSON.stringify({subscriptionId:sid,email:_email||D.userEmail,motivo:mt})});
       var j=await res.json();
       if(j.ok){
-        // Atualizar status local
-        D.asaasSubscriptionId=sid;
-        if(_cloudEnabled)sbUpsert("lucrei_users",{email:_email||D.userEmail,subscriptionStatus:"canceled"}).catch(function(){});
         alert("✅ Assinatura cancelada com sucesso!\nSua conta permanece ativa até o fim do período. Obrigada! 💜")
       }else{alert("Para cancelar, entre em contato:\nWhatsApp: (67) 99117-4813\nMotivo informado: "+mt)}
     }else{
