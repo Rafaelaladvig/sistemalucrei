@@ -5230,7 +5230,112 @@ function svBaixa(id){
   D.agenda=(D.agenda||[]).map(function(a){return String(a.id)===String(id)?Object.assign({},a,{status:"concluido",completedAt:endDate,completedTime:endTime,durationMin:durationMin}):a});
   sv();oM(false,"m1");nav("atend")
 }
-function rClientes(c){var g=ce("div","g2");var form=ce("div","card");form.innerHTML="<div class='sh'><div class='st'>Nova cliente</div></div><label class='lbl'>Nome</label><input class='inp' id='cln' placeholder='Nome completo' style='margin-bottom:8px'><label class='lbl'>WhatsApp</label><input class='inp' id='clp' placeholder='11999999999'><button class='btn bpj' style='width:100%;margin-top:10px' onclick='svCli()'>+ Cadastrar</button>";g.appendChild(form);var lCard=ce("div","card");lCard.innerHTML="<div class='sh'><div class='st'>"+(D.clients||[]).length+" clientes</div></div>";if(!(D.clients||[]).length){lCard.innerHTML+="<div style='text-align:center;padding:20px;color:#9ca3af;font-size:12px'>Nenhuma cliente ainda</div>"}else{var lst=ce("div","txl");(D.clients||[]).forEach(function(cl){var rw=ce("div","txr");rw.innerHTML="<div class='txi' style='background:#fff0f7'>👤</div><div class='txin'><div class='txd'>"+cl.name+"</div><div class='txm'>"+(cl.phone||"")+" · "+cl.createdAt+"</div></div>";var db=ce("button","db");db.textContent="🗑";(function(id){db.onclick=function(){D.clients=(D.clients||[]).filter(function(x){return String(x.id)!==String(id)});sv();nav("clientes")}})(cl.id);rw.appendChild(db);lst.appendChild(rw)});lCard.appendChild(lst)}g.appendChild(lCard);c.appendChild(g)}
+function rClientes(c){
+  var g=ce("div","g2");
+
+  // ── Formulário nova cliente ────────────────────────────────
+  var form=ce("div","card");
+  form.innerHTML="<div class='sh'><div class='st'>Nova cliente</div></div>"
+    +"<label class='lbl'>Nome</label><input class='inp' id='cln' placeholder='Nome completo' style='margin-bottom:8px'>"
+    +"<label class='lbl'>WhatsApp</label><input class='inp' id='clp' placeholder='11999999999' style='margin-bottom:8px'>"
+    +"<label class='lbl'>CPF (opcional)</label><input class='inp' id='clcpf' placeholder='000.000.000-00' style='margin-bottom:8px'>"
+    +"<label class='lbl'>Data de nascimento</label><input class='inp' id='clnb' type='date' style='margin-bottom:10px'>"
+    +"<button class='btn bpj' style='width:100%;margin-top:4px' onclick='svCli()'>+ Cadastrar cliente</button>";
+  g.appendChild(form);
+
+  // ── Lista de clientes ─────────────────────────────────────
+  var lCard=ce("div","card");
+  lCard.innerHTML="<div class='sh'><div class='st'>"+(D.clients||[]).length+" clientes</div></div>";
+
+  if(!(D.clients||[]).length){
+    lCard.innerHTML+="<div style='text-align:center;padding:20px;color:#9ca3af;font-size:12px'>Nenhuma cliente ainda</div>";
+  }else{
+    var lst=ce("div","txl");
+    (D.clients||[]).forEach(function(cl){
+      var rw=ce("div","txr");
+      rw.innerHTML="<div class='txi' style='background:var(--pjl)'>👤</div>"
+        +"<div class='txin'><div class='txd'>"+cl.name+"</div>"
+        +"<div class='txm'>"+(cl.phone||"")+(cl.cpf?" · CPF: "+cl.cpf:"")+(cl.nascimento?" · "+cl.nascimento:"")+"</div></div>";
+
+      // Botão editar
+      var eb=ce("button","db");
+      eb.textContent="✏️";
+      eb.title="Editar cliente";
+      eb.style.marginRight="4px";
+      (function(cliente){
+        eb.onclick=function(){oEditCli(cliente)};
+      })(cl);
+      rw.appendChild(eb);
+
+      // Botão excluir
+      var db=ce("button","db");
+      db.textContent="🗑";
+      db.title="Excluir cliente";
+      (function(id){
+        db.onclick=function(){
+          if(!confirm("Excluir esta cliente?"))return;
+          D.clients=(D.clients||[]).filter(function(x){return String(x.id)!==String(id)});
+          sv();nav("clientes");
+        };
+      })(cl.id);
+      rw.appendChild(db);
+
+      lst.appendChild(rw);
+    });
+    lCard.appendChild(lst);
+  }
+  g.appendChild(lCard);
+  c.appendChild(g);
+}
+
+// ── Abrir modal de edição de cliente ─────────────────────────
+function oEditCli(cl){
+  // Remover modal anterior se existir
+  var ex=gi("modal-edit-cli");if(ex)ex.remove();
+
+  var ov=ce("div","mov");
+  ov.id="modal-edit-cli";
+  ov.innerHTML="<div class='mbox'>"
+    +"<h2>Editar cliente</h2>"
+    +"<label class='mlab'>Nome</label>"
+    +"<input class='minp pj' id='ecl-nm' placeholder='Nome completo' value='"+(cl.name||"").replace(/'/g,"&#39;")+"'>"
+    +"<label class='mlab'>WhatsApp</label>"
+    +"<input class='minp pj' id='ecl-ph' placeholder='11999999999' value='"+(cl.phone||"")+"'>"
+    +"<label class='mlab'>CPF</label>"
+    +"<input class='minp pj' id='ecl-cpf' placeholder='000.000.000-00' value='"+(cl.cpf||"")+"'>"
+    +"<label class='mlab'>Data de nascimento</label>"
+    +"<input class='minp pj' id='ecl-nb' type='date' value='"+(cl.nascimento||"")+"'>"
+    +"<div style='display:flex;gap:10px;margin-top:16px'>"
+    +"<button class='btn bpj' style='flex:1' onclick='svEditCli(this)' data-id='"+cl.id+"'>Salvar</button>"
+    +"<button class='btn' style='flex:1;background:var(--cr2);color:var(--tx)' onclick='closeEditCli()'>Cancelar</button>"
+    +"</div>"
+    +"</div>";
+  document.body.appendChild(ov);
+  ov.onclick=function(e){if(e.target===ov)ov.remove()};
+}
+
+// ── Salvar edição de cliente ──────────────────────────────────
+function closeEditCli(){var m=gi("modal-edit-cli");if(m)m.remove()}
+function svEditCli(btn){
+  var id=btn?btn.getAttribute("data-id"):"";
+  var nm=gi("ecl-nm").value.trim();
+  var ph=gi("ecl-ph").value.trim();
+  var cpf=gi("ecl-cpf").value.trim();
+  var nb=gi("ecl-nb").value.trim();
+
+  if(!nm){alert("Nome é obrigatório.");return}
+
+  D.clients=(D.clients||[]).map(function(cl){
+    if(String(cl.id)===String(id)){
+      return Object.assign({},cl,{name:nm,phone:ph,cpf:cpf,nascimento:nb});
+    }
+    return cl;
+  });
+
+  sv();
+  var m=gi("modal-edit-cli");if(m)m.remove();
+  nav("clientes");
+}
 function svCli(){var n=gi("cln").value.trim();if(!n)return;(D.clients=D.clients||[]).unshift({id:Date.now(),name:n,phone:gi("clp").value.trim(),createdAt:tod()});sv();nav("clientes")}
 
 // ═══ PJ DASHBOARD (FULL) ════════════════════════════════════════════════════
