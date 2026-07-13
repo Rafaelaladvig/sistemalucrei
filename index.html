@@ -1240,29 +1240,32 @@ async function processAsaasReturn(){
     var subId=params.get("asaas_sub")||params.get("subscriptionId")||params.get("sub");
     var status=params.get("status")||params.get("paymentStatus")||"";
     var emailParam=params.get("email")||"";
-    var targetEmail=emailParam||_email||D.userEmail||"";
-    if(!subId)return;// sem parâmetro, não é retorno do Asaas
-    // Limpar URL para não reprocessar
+
+    if(!subId)return; // não é retorno do Asaas
+
+    // Limpar URL imediatamente
     if(window.history&&window.history.replaceState){
       window.history.replaceState({},"",window.location.pathname);
     }
+
     if(status.toLowerCase().includes("cancel")||status.toLowerCase().includes("fail"))return;
-    // Gravar localmente
+
+    // Salvar localmente para usar no próximo login
+    ls_set("_asaas_sub", subId);
+    ls_set("_asaas_email", emailParam);
     D.asaasSubscriptionId=subId;
-    ls_set("_asaas_sub",subId);
-    sv();
-    // Gravar no Supabase
-    if(_cloudEnabled&&targetEmail){
-      await sbUpsert("lucrei_users",{
-        email:targetEmail,
-        subscription_id:subId,
-        subscriptionStatus:"active"
+
+    // Se já está logada, confirmar via Railway
+    var targetEmail=emailParam||_email||D.userEmail||"";
+    if(targetEmail){
+      var res=await apiCall("/api/subscription/confirm",{
+        method:"POST",
+        body:{subscriptionId:subId}
       });
-      // Atualizar cache local do usuário
-      var u=getUsers();
-      if(u[targetEmail]){u[targetEmail].subscription_id=subId;u[targetEmail].subscriptionStatus="active";saveUsers(u)}
-      console.log("✅ subscriptionId gravado:",subId);
+      if(res.ok)console.log("✅ subscriptionId confirmado via Railway:",subId);
     }
+
+    console.log("✅ subscriptionId salvo localmente:",subId);
   }catch(e){console.warn("processAsaasReturn error:",e)}
 }
 
