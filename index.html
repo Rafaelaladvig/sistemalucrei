@@ -985,6 +985,10 @@ select.minp{cursor:pointer}
         <div id="pc-aut" class="pc pj"><div class="pc-i">✨</div><div class="pc-n">Negócio</div><div class="pc-s">Pessoal + Negócio completo</div></div>
       </div>
     </div>
+    <div id="a-code-row" style="margin-bottom:12px">
+      <input id="a-code" class="ai" placeholder="Código de acesso (opcional)" type="text" style="margin-bottom:0;text-transform:uppercase;letter-spacing:2px">
+      <div style="font-size:11px;color:var(--mu);margin-top:5px;padding-left:2px">Tem um código? Acesso gratuito liberado automaticamente.</div>
+    </div>
     <button id="a-btn" class="abtn">Criar conta ✨</button>
     <div class="alink"><span id="a-lt">Já tem conta? </span><a id="a-la">Entrar</a></div>
     <div id="a-fp-row" class="alink" style="margin-top:6px;display:none">
@@ -1478,6 +1482,7 @@ function setMode(m){
   gi("a-nm").style.display=m==="signup"?"block":"none";
   var _aph=gi("a-ph");if(_aph)_aph.style.display=m==="signup"?"block":"none";
   gi("a-psel").style.display=m==="signup"?"block":"none";
+  var _acr=gi("a-code-row");if(_acr)_acr.style.display=m==="signup"?"block":"none";
   gi("a-btn").textContent=m==="signup"?"Criar conta ✨":"Entrar →";
   gi("aerr").style.display="none";
   gi("a-lt").textContent=m==="signup"?"Já tem conta? ":"Não tem conta? ";
@@ -1496,7 +1501,8 @@ async function authGo(){
 
     // ── ETAPA 2.2: Cadastro via Railway (com fallback para Supabase direto) ──
     if(MIGRATION_FLAGS.register){
-      var apiResReg = await apiCall("/api/auth/register", {method:"POST", body:{name:nm, email:em, pw:pw, perfil:selPerf, phone:ph}});
+      var accessCode=(gi("a-code")?gi("a-code").value.trim().toUpperCase():"");
+      var apiResReg = await apiCall("/api/auth/register", {method:"POST", body:{name:nm, email:em, pw:pw, perfil:selPerf, phone:ph, accessCode:accessCode}});
       if(apiResReg.ok && apiResReg.data.ok){
         ls_set("lc-api-token", apiResReg.data.token);
         ls_set("lc-api-email", em);
