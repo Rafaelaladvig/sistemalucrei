@@ -986,8 +986,13 @@ select.minp{cursor:pointer}
       </div>
     </div>
     <div id="a-code-row" style="margin-bottom:12px">
-      <input id="a-code" class="ai" placeholder="Código de acesso (opcional)" type="text" style="margin-bottom:0;text-transform:uppercase;letter-spacing:2px">
-      <div style="font-size:11px;color:var(--mu);margin-top:5px;padding-left:2px">Tem um código? Acesso gratuito liberado automaticamente.</div>
+      <div id="a-code-toggle" onclick="toggleCodigoAcesso()" style="font-size:11.5px;color:var(--mu);cursor:pointer;text-align:center;margin-bottom:8px;text-decoration:underline;text-underline-offset:3px;opacity:.7">
+        Tem um código promocional?
+      </div>
+      <div id="a-code-input" style="display:none">
+        <input id="a-code" class="ai" placeholder="Digite seu código" type="text" style="margin-bottom:4px;text-transform:uppercase;letter-spacing:3px;text-align:center;font-weight:600">
+        <div style="font-size:11px;color:var(--gr);text-align:center">✨ Acesso gratuito liberado automaticamente</div>
+      </div>
     </div>
     <button id="a-btn" class="abtn">Criar conta ✨</button>
     <div class="alink"><span id="a-lt">Já tem conta? </span><a id="a-la">Entrar</a></div>
@@ -1475,6 +1480,16 @@ function setPerf(p){
   gi("pc-clt").className="pc"+(p==="clt"?" pf":"");
   gi("pc-aut").className="pc"+(p==="empreendedora"?" pj":"")
 }
+function toggleCodigoAcesso(){
+  var inp=gi("a-code-input");
+  var tog=gi("a-code-toggle");
+  if(!inp)return;
+  var visible=inp.style.display!=="none";
+  inp.style.display=visible?"none":"block";
+  tog.textContent=visible?"Tem um código promocional?":"Ocultar código";
+  if(!visible)setTimeout(function(){gi("a-code").focus()},100);
+}
+
 function setMode(m){
   authMode=m;
   gi("at-s").className="atab"+(m==="signup"?" on":"");
