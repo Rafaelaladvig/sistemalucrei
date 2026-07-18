@@ -386,6 +386,35 @@ body{
 }
 
 /* ── TOPBAR ────────────────────────────────────────────────────────── */
+/* ── SIDEBAR HEADER ───────────────────────────────────────────── */
+#sb-brand{
+  padding:22px 20px 16px;
+  background:linear-gradient(160deg,var(--pfd),var(--pf));
+  border-bottom:1px solid rgba(255,255,255,.1);
+}
+
+#sb-brand.pj{background:linear-gradient(160deg,#1a1208,var(--br))}
+
+.sb-logo{
+  font-family:'Cormorant Garamond',serif;
+  font-style:italic;font-size:28px;font-weight:400;
+  color:#fff;letter-spacing:-0.5px;line-height:1;margin-bottom:2px;
+}
+
+.sb-tag{
+  font-size:9px;font-weight:400;letter-spacing:2px;
+  text-transform:uppercase;color:rgba(255,255,255,.5);margin-bottom:12px;
+}
+
+#sb-user{
+  margin-top:12px;padding-top:12px;
+  border-top:1px solid rgba(255,255,255,.1);
+}
+
+.sb-nm{font-size:12.5px;font-weight:600;color:rgba(255,255,255,.9);line-height:1.3;margin-bottom:2px}
+.sb-em{font-size:10.5px;color:rgba(255,255,255,.45)}
+
+/* ── TOPBAR ───────────────────────────────────────────────────── */
 #tb{
   height:var(--tb-h);
   background:var(--wh);
@@ -394,12 +423,14 @@ body{
   justify-content:space-between;
   padding:0 20px;
   position:sticky;top:0;z-index:50;
+  gap:10px;
 }
 
 .tb-title{
   font-family:'Cormorant Garamond',serif;
   font-size:22px;font-weight:500;
   font-style:italic;color:var(--pf);
+  flex-shrink:0;
 }
 
 .tb-title.pj{color:var(--pj)}
@@ -445,6 +476,61 @@ body{
 }
 
 .btn-lancar.pj:hover{box-shadow:0 4px 16px rgba(196,105,58,.35) !important}
+
+/* ── TOPBAR REAL (classes .tb .tb-t .mn .mnb .mnl .tbtn) ─────── */
+.tb{
+  height:var(--tb-h);background:var(--wh);
+  border-bottom:1px solid var(--bd);
+  display:flex;align-items:center;
+  justify-content:space-between;
+  padding:0 16px;position:sticky;top:0;z-index:50;gap:8px;
+}
+.tb-menu-btn{
+  background:none;border:none;font-size:18px;color:var(--mu);
+  cursor:pointer;padding:6px 8px;border-radius:8px;flex-shrink:0;
+  transition:background .18s;display:none;
+}
+.tb-menu-btn:hover{background:var(--cr)}
+.tb-t{
+  font-family:'Cormorant Garamond',serif;
+  font-size:20px;font-weight:500;font-style:italic;
+  color:var(--pf);flex-shrink:0;
+}
+.tb-t.pj{color:var(--pj)}
+.mn{
+  display:flex;align-items:center;gap:4px;
+  background:var(--cr);border:1px solid var(--bd);
+  border-radius:20px;padding:4px 10px;
+}
+.mnb{
+  background:none;border:none;font-size:13px;color:var(--mu);
+  cursor:pointer;padding:1px 5px;border-radius:6px;
+  line-height:1;transition:all .15s;
+}
+.mnb:hover{background:var(--cr2);color:var(--tx)}
+.mnl{
+  font-family:'Poppins',sans-serif;
+  font-size:12px;font-weight:600;color:var(--tx);
+  white-space:nowrap;min-width:90px;text-align:center;
+}
+.tbtn{
+  padding:8px 16px;
+  background:linear-gradient(135deg,var(--pf),var(--pfd));
+  color:#fff;border:none;border-radius:10px;
+  font-family:'Poppins',sans-serif;
+  font-size:12.5px;font-weight:600;
+  cursor:pointer;white-space:nowrap;flex-shrink:0;
+  transition:all .18s;box-shadow:0 2px 8px rgba(74,103,65,.25);
+}
+.tbtn:hover{transform:translateY(-1px);box-shadow:0 4px 14px rgba(74,103,65,.35)}
+.tbtn.pj{background:linear-gradient(135deg,var(--pj),var(--pjd));box-shadow:0 2px 8px rgba(196,105,58,.25)}
+.tbtn.pj:hover{box-shadow:0 4px 14px rgba(196,105,58,.35)}
+@media(max-width:768px){
+  .tb-menu-btn{display:flex}
+  .tb-t{font-size:17px}
+  .mnl{min-width:76px;font-size:11px}
+  .tbtn{padding:7px 12px;font-size:11.5px}
+}
 
 /* ── ÁREA PRINCIPAL ────────────────────────────────────────────────── */
 .main{flex:1;overflow-y:auto;overflow-x:hidden;background:var(--bg)}
@@ -672,6 +758,34 @@ select.minp{cursor:pointer}
   box-shadow:0 -4px 20px rgba(61,43,31,.08);
 }
 
+/* Bottom nav buttons (classe .nb gerada pelo renderBN) */
+.nb{
+  display:flex;flex-direction:column;
+  align-items:center;justify-content:center;
+  gap:3px;
+  flex:1;
+  padding:6px 4px;
+  border:none;background:none;
+  font-family:'Poppins',sans-serif;
+  font-size:10.5px;font-weight:500;
+  color:var(--fa);
+  cursor:pointer;
+  transition:color .18s;
+  min-width:0;
+}
+
+.nb.on{color:var(--pf);font-weight:600}
+.nb.onpj{color:var(--pj);font-weight:600}
+.nb:hover{color:var(--tx)}
+
+.nb-i{
+  font-size:20px;
+  line-height:1;
+  display:block;
+  margin-bottom:1px;
+}
+
+/* Fallback: classe .bnav antiga */
 .bnav{
   display:flex;flex-direction:column;
   align-items:center;gap:3px;
@@ -686,6 +800,71 @@ select.minp{cursor:pointer}
 
 .bnav.on{color:var(--pf)}
 .bnav.on.pj{color:var(--pj)}
+
+/* ── SIDEBAR NAV BUTTONS (classe .sb-nb gerada pelo renderSB) ─── */
+.sb-nb{
+  display:flex;align-items:center;gap:10px;
+  width:100%;
+  padding:10px 14px;
+  border:none;border-radius:10px;
+  background:none;
+  font-family:'Poppins',sans-serif;
+  font-size:13px;font-weight:500;
+  color:var(--mu);
+  cursor:pointer;
+  transition:all .18s ease;
+  margin-bottom:2px;
+  text-align:left;
+  box-sizing:border-box;
+}
+
+.sb-nb:hover{background:var(--cr);color:var(--tx)}
+
+.sb-nb.sb-on{
+  background:var(--pfl);
+  color:var(--pf);
+  font-weight:600;
+}
+
+.sb-nb.sb-on.pj{background:var(--pjl);color:var(--pjd)}
+
+.sb-ic{
+  font-size:16px;
+  width:22px;
+  text-align:center;
+  flex-shrink:0;
+}
+
+/* ── PANEL SWITCH ──────────────────────────────────────────────── */
+#sb-panel-sw{
+  display:none;
+  flex-direction:row;gap:4px;
+  padding:10px 12px;
+  border-top:1px solid var(--bd);
+}
+
+.psb{
+  flex:1;padding:7px;
+  border:1.5px solid var(--bd);
+  border-radius:8px;
+  background:none;
+  font-family:'Poppins',sans-serif;
+  font-size:11.5px;font-weight:500;
+  color:var(--mu);cursor:pointer;
+  transition:all .18s;text-align:center;
+}
+
+.psb.on{
+  background:var(--pfl);
+  border-color:var(--pf);
+  color:var(--pf);font-weight:600;
+}
+
+.psb.on.pj{
+  background:var(--pjl);
+  border-color:var(--pj);
+  color:var(--pj);
+}
 
 /* ── LUNA FAB ──────────────────────────────────────────────────────── */
 #luna-fab{
@@ -1562,6 +1741,9 @@ async function authGo(){
         if(subStatus2==="canceled"||subStatus2==="suspended"||subStatus2==="inactive"){
           showErr("Sua assinatura está inativa. Entre em contato: (67) 99117-4813");return;
         }
+        if(subStatus2==="pending"){
+          showErr("Acesso não encontrado. Para acessar o Lucrei, assine um plano em: rafaelaladvig.github.io/paginadevendas");return;
+        }
         saveSession(em);sv();boot();
         syncFromCloud();
         return;
@@ -1615,6 +1797,9 @@ async function authGo(){
     if(subStatus==="canceled"||subStatus==="suspended"||subStatus==="inactive"){
       showErr("Sua assinatura está inativa. Entre em contato: (67) 99117-4813");return;
     }
+    if(subStatus==="pending"){
+      showErr("Acesso não encontrado. Para acessar o Lucrei, assine um plano em: rafaelaladvig.github.io/paginadevendas");return;
+    }
     saveSession(em);sv();boot();
     syncFromCloud();
   }
@@ -1663,6 +1848,9 @@ function renderSB(){
   var nm=gi("sb-nm");var em=gi("sb-em");
   if(nm)nm.textContent=D.userName;
   if(em)em.textContent=D.userEmail;
+  // Atualizar fundo do header da sidebar conforme painel
+  var brand=gi("sb-brand");
+  if(brand)brand.className=panel==="pj"?"pj":"";
   var tabs=panel==="pf"?PF_TABS:PJ_TABS;
   var cls=panel==="pf"?"on":"onpj";
   tabs.forEach(function(t){
@@ -6487,6 +6675,11 @@ window.onload=function(){
       if(_subSt==="canceled"||_subSt==="suspended"||_subSt==="inactive"){
         clearSession();showAuth();setMode("login");
         setTimeout(function(){showErr("Sua assinatura está inativa. Entre em contato: (67) 99117-4813")},200);
+        return;
+      }
+      if(_subSt==="pending"){
+        clearSession();showAuth();setMode("login");
+        setTimeout(function(){showErr("Acesso não encontrado. Para acessar o Lucrei, assine um plano em: rafaelaladvig.github.io/paginadevendas")},200);
         return;
       }
       saveSession(sess.email);
