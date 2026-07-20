@@ -1566,9 +1566,8 @@ function nav(t){
   renderSB();
   var c=gi("ct");c.innerHTML="";c.className="ct su";
   if(isPF){
-    ({dash:rDash,invest:rInvest,luna:rLunaTab,plan:rPlan,cartoes:rCartoes,hist:rHist,contas:rContas,config:rConfig,metas:rMetas})[t]?({dash:rDash,invest:rInvest,luna:rLunaTab,plan:rPlan,cartoes:rCartoes,hist:rHist,contas:rContas,config:rConfig,metas:rMetas})[t](c,mk_(vy,vm)):null
+    ({dash:rDash,pfcalend:rPFCalend,invest:rInvest,luna:rLunaTab,plan:rPlan,cartoes:rCartoes,hist:rHist,contas:rContas,config:rConfig,metas:rMetas})[t]?({dash:rDash,pfcalend:rPFCalend,invest:rInvest,luna:rLunaTab,plan:rPlan,cartoes:rCartoes,hist:rHist,contas:rContas,config:rConfig,metas:rMetas})[t](c,mk_(vy,vm)):null
   }else{
-    var pfMap={dash:rPFD,pfcalend:rPFCalend,invest:rInvest,luna:rLunaTab,metas:rMetas,plan:rPlan,cartoes:rCartoes,hist:rHist,contas:rContas,config:rConfig};
     var pjMap={dash:rPJD,pjdash:rPJDash,metas:rPJMetas,plan:rPJP,calend:rCalend,atend:rAtend,invest:rInvestPJ,cartoes:rCartoes,hist:rHistPJ,contas:rContas,luna:rLunaTab,config:rConfig};
     if(pjMap[t])pjMap[t](c,mk_(vy,vm))
   }
