@@ -1812,6 +1812,7 @@ var _cel={};
 
 var PF_TABS=[
   {id:"dash",ic:"🏠",l:"Início"},
+  {id:"pfcalend",ic:"📅",l:"Calendário"},
   {id:"invest",ic:"📈",l:"Investimentos"},
   {id:"luna",ic:"✨",l:"Luna IA"},
   {id:"metas",ic:"🎯",l:"Metas"},
@@ -1870,6 +1871,152 @@ function renderSB(){
   }
 }
 
+
+// ═══════════════════════════════════════════════════════════════════
+// AVISOS DE VENCIMENTO PF
+// ═══════════════════════════════════════════════════════════════════
+
+function fecharAvisoVenc(){var el=document.getElementById("aviso-venc");if(el)el.remove()}
+function fecharAvisoVencCalend(){fecharAvisoVenc();nav("pfcalend")}
+function fecharNotifAsk(){var el=document.getElementById("notif-ask");if(el)el.remove()}
+function aceitarNotificacao(){
+  Notification.requestPermission().then(function(perm){
+    fecharNotifAsk();
+    if(perm==="granted")new Notification("Lucrei",{body:"Lembretes ativados!"});
+  })
+}
+function checkVencimentosPF(){
+  if(panel!=="pf") return;
+  var today=tod();
+  var todayKey="pf_aviso_"+today+"_"+_email;
+
+  // Mostrar apenas uma vez por dia
+  if(ls_get(todayKey)==="1") return;
+
+  // ── Coletar vencimentos ───────────────────────────────────────
+  var vencHoje=[];var vencidos=[];
+
+  // 1. Transações pendentes
+  (D.pf.transactions||[]).forEach(function(t){
+    if(!t.pending||t.type!=="saida") return;
+    if(t.date===today) vencHoje.push({desc:t.description,val:t.amount||0,tipo:"conta"});
+    else if(t.date<today) vencidos.push({desc:t.description,val:t.amount||0,tipo:"conta"});
+  });
+
+  // 2. Faturas de cartão
+  var mkStr=today.substring(0,7);
+  (D.cards||[]).forEach(function(card){
+    if(!card.dueDay) return;
+    var dueDate=today.substring(0,4)+"-"+today.substring(5,7)+"-"+String(card.dueDay).padStart(2,"0");
+    var paid=card.paidMonths&&card.paidMonths[mkStr];
+    if(paid) return;
+    var cardBill=(D.pf.transactions||[]).filter(function(t){
+      return t.cardId===card.id&&t.date&&t.date.startsWith(mkStr)
+    });
+    var billTotal=cardBill.reduce(function(s,t){return s+(t.amount||0)},0);
+    if(billTotal>0){
+      if(dueDate===today) vencHoje.push({desc:"Fatura "+card.name,val:billTotal,tipo:"fatura"});
+      else if(dueDate<today) vencidos.push({desc:"Fatura "+card.name,val:billTotal,tipo:"fatura"});
+    }
+  });
+
+  // 3. Parcelas
+  (D.installments||[]).forEach(function(inst){
+    var instDate=inst.date||inst.startDate||"";
+    if(!instDate) return;
+    var startDate=new Date(instDate+"T12:00:00");
+    var monthsDiff=(parseInt(today.substring(0,4))-startDate.getFullYear())*12+(parseInt(today.substring(5,7))-1-startDate.getMonth());
+    if(monthsDiff<0||monthsDiff>=(inst.total||1)) return;
+    if(monthsDiff<(inst.paidCount||0)) return;
+    var dueDay=startDate.getDate();
+    var parcelDate=today.substring(0,4)+"-"+today.substring(5,7)+"-"+String(dueDay).padStart(2,"0");
+    var val=inst.installmentValue||((inst.amount||0)/(inst.total||1));
+    if(parcelDate===today) vencHoje.push({desc:inst.description+" (parcela "+(monthsDiff+1)+"/"+inst.total+")",val:val,tipo:"parcela"});
+    else if(parcelDate<today) vencidos.push({desc:inst.description,val:val,tipo:"parcela"});
+  });
+
+  if(!vencHoje.length&&!vencidos.length) return;
+
+  // ── Montar modal de aviso ─────────────────────────────────────
+  var totalHoje=vencHoje.reduce(function(s,x){return s+x.val},0);
+
+  var ov=document.createElement("div");
+  ov.id="aviso-venc";
+  ov.style.cssText="position:fixed;inset:0;background:rgba(30,20,12,.55);backdrop-filter:blur(3px);z-index:800;display:flex;align-items:center;justify-content:center;padding:20px";
+
+  var box=document.createElement("div");
+  box.style.cssText="background:#fff;border-radius:20px;padding:28px 24px;max-width:380px;width:100%;box-shadow:0 24px 60px rgba(0,0,0,.2);font-family:'Poppins',sans-serif";
+
+  var html="<div style='font-size:24px;margin-bottom:12px;text-align:center'>⚠️</div>";
+  html+="<div style='font-family:Cormorant Garamond,serif;font-size:22px;font-style:italic;color:#3D2B1F;margin-bottom:8px;text-align:center'>Atenção financeira</div>";
+
+  if(vencHoje.length){
+    html+="<div style='background:#fef3c7;border:1px solid #fde68a;border-radius:12px;padding:12px 14px;margin-bottom:10px'>";
+    html+="<div style='font-size:12.5px;font-weight:600;color:#92400e;margin-bottom:4px'>Vencendo hoje</div>";
+    html+="<div style='font-size:13px;color:#3D2B1F'>Você tem <b>"+vencHoje.length+" "+(vencHoje.length===1?"compromisso":"compromissos")+"</b> vencendo hoje, no total de <b>"+R(totalHoje)+"</b>.</div>";
+    if(vencHoje.length<=3){
+      html+="<ul style='margin:8px 0 0;padding-left:16px;font-size:12px;color:#6b5c3e'>";
+      vencHoje.forEach(function(x){html+="<li>"+x.desc+" — "+R(x.val)+"</li>"});
+      html+="</ul>"
+    }
+    html+="</div>"
+  }
+
+  if(vencidos.length){
+    html+="<div style='background:#fee2e2;border:1px solid #fecaca;border-radius:12px;padding:12px 14px;margin-bottom:10px'>";
+    html+="<div style='font-size:12.5px;font-weight:600;color:#991b1b;margin-bottom:4px'>Contas vencidas</div>";
+    html+="<div style='font-size:13px;color:#3D2B1F'>Você possui <b>"+vencidos.length+" "+(vencidos.length===1?"conta vencida":"contas vencidas")+"</b>.</div>";
+    html+="</div>"
+  }
+
+  html+="<div style='display:flex;gap:10px;margin-top:16px'>";
+  html+="<button onclick='fecharAvisoVenc()' style='flex:1;padding:11px;border:1.5px solid #DDD5C8;border-radius:10px;background:none;font-family:Poppins,sans-serif;font-size:13px;font-weight:500;cursor:pointer;color:#6b7280'>Fechar</button>";
+  html+="<button onclick='fecharAvisoVencCalend()' style='flex:2;padding:11px;background:linear-gradient(135deg,#4A6741,#344d2e);color:#fff;border:none;border-radius:10px;font-family:Poppins,sans-serif;font-size:13px;font-weight:600;cursor:pointer'>Ver calendário</button>";
+  html+="</div>";
+
+  box.innerHTML=html;
+  ov.appendChild(box);
+  ov.onclick=function(e){if(e.target===ov)ov.remove()};
+  document.body.appendChild(ov);
+
+  // Marcar como exibido hoje
+  ls_set(todayKey,"1");
+
+  // ── Notificação do navegador ──────────────────────────────────
+  if(vencHoje.length&&Notification.permission==="granted"){
+    var msg="Você tem "+vencHoje.length+" "+(vencHoje.length===1?"compromisso":"compromissos")+" vencendo hoje — "+R(totalHoje);
+    new Notification("Lucrei — Aviso financeiro",{body:msg,icon:"/sistemalucrei/icon.png"});
+  }
+}
+
+function pedirPermissaoNotificacao(){
+  // Só pede uma vez
+  if(ls_get("notif_asked")==="1") return;
+  ls_set("notif_asked","1");
+  if(!("Notification" in window)) return;
+  if(Notification.permission==="granted"||Notification.permission==="denied") return;
+
+  // Mostrar explicação antes de pedir
+  var ov=document.createElement("div");
+  ov.id="notif-ask";
+  ov.style.cssText="position:fixed;bottom:80px;right:16px;left:16px;max-width:360px;margin:0 auto;background:#fff;border-radius:16px;padding:18px 20px;box-shadow:0 8px 32px rgba(0,0,0,.15);z-index:700;font-family:'Poppins',sans-serif;border:1px solid var(--bd)";
+  ov.innerHTML="<div style='font-size:13px;font-weight:600;color:#3D2B1F;margin-bottom:6px'>🔔 Lembretes de vencimento</div>"
+    +"<div style='font-size:12px;color:#6b7280;margin-bottom:14px;line-height:1.6'>Quer receber alertas sobre contas e faturas próximas do vencimento?</div>"
+    +"<div style='display:flex;gap:8px'>"
+    +"<button onclick='fecharNotifAsk()' style='flex:1;padding:9px;border:1.5px solid #DDD5C8;border-radius:9px;background:none;font-family:Poppins,sans-serif;font-size:12px;cursor:pointer;color:#6b7280'>Agora não</button>"
+    +"<button onclick='aceitarNotificacao()' style='flex:2;padding:9px;background:linear-gradient(135deg,#4A6741,#344d2e);color:#fff;border:none;border-radius:9px;font-family:Poppins,sans-serif;font-size:12px;font-weight:600;cursor:pointer'>Ativar lembretes</button>"
+    +"</div>";
+
+  document.body.appendChild(ov);
+
+
+  // Auto-fechar após 8 segundos
+  setTimeout(function(){
+    var el=document.getElementById("notif-ask");
+    if(el)el.remove();
+  },8000);
+}
+
 function boot(){
   gi("sa").style.display="none";gi("app").style.display="flex";
   var nm=gi("sb-nm");var em=gi("sb-em");
@@ -1884,6 +2031,13 @@ function boot(){
   }
   renderSB();renderBN();nav("dash");
   setTimeout(showSetupPrompt,600);
+  // Aviso de vencimentos PF (após 1.2s para não sobrepor o tour)
+  setTimeout(function(){
+    if(panel==="pf"){
+      pedirPermissaoNotificacao();
+      setTimeout(checkVencimentosPF,400);
+    }
+  },1200);
 }
 function logout(){
   if(_email){try{ls_set("lc-last-logout-"+_email, JSON.stringify({at:new Date().toISOString()}))}catch(e){}}
@@ -2119,6 +2273,7 @@ function nav(t){
   if(isPF){
     ({dash:rDash,invest:rInvest,luna:rLunaTab,plan:rPlan,cartoes:rCartoes,hist:rHist,contas:rContas,config:rConfig,metas:rMetas})[t]?({dash:rDash,invest:rInvest,luna:rLunaTab,plan:rPlan,cartoes:rCartoes,hist:rHist,contas:rContas,config:rConfig,metas:rMetas})[t](c,mk_(vy,vm)):null
   }else{
+    var pfMap={dash:rPFD,pfcalend:rPFCalend,invest:rInvest,luna:rLunaTab,metas:rMetas,plan:rPlan,cartoes:rCartoes,hist:rHist,contas:rContas,config:rConfig};
     var pjMap={dash:rPJD,pjdash:rPJDash,metas:rPJMetas,plan:rPJP,calend:rCalend,atend:rAtend,invest:rInvestPJ,cartoes:rCartoes,hist:rHistPJ,contas:rContas,luna:rLunaTab,config:rConfig};
     if(pjMap[t])pjMap[t](c,mk_(vy,vm))
   }
@@ -3570,6 +3725,237 @@ async function lunaMsg(p,text,sys,container,AC){
 }
 
 // ═══ PJ STUBS (preserved from previous version) ══════════════════════════════
+
+// ═══════════════════════════════════════════════════════════════════
+// CALENDÁRIO PF — Contas, receitas, faturas, parcelas agendadas
+// ═══════════════════════════════════════════════════════════════════
+function rPFCalend(c, mk){
+  var today=new Date(); var todayStr=tod();
+  if(!window._pfCalSelDay) window._pfCalSelDay=todayStr;
+
+  var mkStr=mk_(vy,vm);
+
+  // ── Coletar eventos PF do mês ─────────────────────────────────
+  // 1. Transações PF do mês
+  var txPF=(D.pf.transactions||[]).filter(function(t){return t.date&&t.date.startsWith(mkStr)});
+
+  // 2. Faturas de cartão (vencimento no mês)
+  var faturas=[];
+  (D.cards||[]).forEach(function(card){
+    if(!card.dueDay) return;
+    var dueDate=vy+"-"+String(vm+1).padStart(2,"0")+"-"+String(card.dueDay).padStart(2,"0");
+    // Verificar se existe fatura (compras no mês)
+    var cardBill=(D.pf.transactions||[]).filter(function(t){
+      return t.cardId===card.id && t.date && t.date.startsWith(mkStr)
+    });
+    var billTotal=cardBill.reduce(function(s,t){return s+(t.amount||0)},0);
+    if(billTotal>0 || card.dueDay){
+      faturas.push({
+        id:"fat_"+card.id+"_"+mkStr,
+        type:"fatura",
+        date:dueDate,
+        description:"Fatura "+card.name,
+        amount:billTotal,
+        cardId:card.id,
+        paid:card.paidMonths&&card.paidMonths[mkStr]
+      });
+    }
+  });
+
+  // 3. Parcelas vencendo no mês
+  var parcelas=[];
+  (D.installments||[]).forEach(function(inst){
+    var instDate=inst.date||(inst.startDate||"");
+    if(!instDate) return;
+    // Calcular se há parcela neste mês
+    var startDate=new Date(instDate+"T12:00:00");
+    var monthsDiff=(vy-startDate.getFullYear())*12+(vm-startDate.getMonth());
+    if(monthsDiff>=0 && monthsDiff<(inst.total||1)){
+      var dueDay=startDate.getDate();
+      var parcelDate=vy+"-"+String(vm+1).padStart(2,"0")+"-"+String(dueDay).padStart(2,"0");
+      parcelas.push({
+        id:"parc_"+inst.id+"_"+monthsDiff,
+        type:"parcela",
+        date:parcelDate,
+        description:inst.description+" ("+(monthsDiff+1)+"/"+inst.total+")",
+        amount:inst.installmentValue||((inst.amount||0)/(inst.total||1)),
+        paid:monthsDiff<(inst.paidCount||0)
+      });
+    }
+  });
+
+  // ── Montar mapa de dias ───────────────────────────────────────
+  var dayMap={};
+  function markDay(dStr,type){if(!dayMap[dStr])dayMap[dStr]={};dayMap[dStr][type]=true}
+
+  txPF.forEach(function(t){
+    if(t.pending) markDay(t.date,"pend");
+    else if(t.type==="entrada") markDay(t.date,"in");
+    else markDay(t.date,"out");
+  });
+
+  faturas.forEach(function(f){
+    if(!f.paid && f.date){
+      var fDate=new Date(f.date+"T12:00:00");
+      var todayDate=new Date(todayStr+"T12:00:00");
+      if(fDate<todayDate) markDay(f.date,"venc");
+      else if(f.date===todayStr) markDay(f.date,"hoje");
+      else markDay(f.date,"pend");
+    } else if(f.paid) markDay(f.date,"in");
+  });
+
+  parcelas.forEach(function(p){
+    if(!p.paid && p.date){
+      var pDate=new Date(p.date+"T12:00:00");
+      var todayDate=new Date(todayStr+"T12:00:00");
+      if(pDate<todayDate) markDay(p.date,"venc");
+      else if(p.date===todayStr) markDay(p.date,"hoje");
+      else markDay(p.date,"pend");
+    } else if(p.paid) markDay(p.date,"in");
+  });
+
+  // ── Grid do calendário ────────────────────────────────────────
+  var calCard=ce("div","card");calCard.style.cssText="padding:8px;overflow:hidden";
+
+  // Cabeçalho dias da semana
+  var daysHdr=ce("div");daysHdr.style.cssText="display:grid;grid-template-columns:repeat(7,1fr);border-bottom:1px solid var(--bd);margin-bottom:0";
+  ["DOM","SEG","TER","QUA","QUI","SEX","SAB"].forEach(function(d){
+    var h=ce("div");h.style.cssText="font-size:9px;font-weight:700;color:#9ca3af;padding:4px 0;text-align:center;letter-spacing:.5px";
+    h.textContent=d;daysHdr.appendChild(h)
+  });calCard.appendChild(daysHdr);
+
+  var firstDay=new Date(vy,vm,1).getDay();
+  var daysInMonth=new Date(vy,vm+1,0).getDate();
+  var cells=[];
+  for(var i=0;i<firstDay;i++) cells.push(null);
+  for(var day=1;day<=daysInMonth;day++) cells.push(day);
+  while(cells.length%7!==0) cells.push(null);
+
+  var grid=ce("div");grid.style.cssText="display:grid;grid-template-columns:repeat(7,1fr);border-left:1px solid var(--bd)";
+
+  cells.forEach(function(day){
+    var cell=ce("div");
+    cell.style.cssText="min-height:52px;border-right:1px solid var(--bd);border-bottom:1px solid var(--bd);padding:4px;cursor:"+(day?"pointer":"default")+";transition:background .1s;position:relative";
+    if(!day){cell.style.background="#fafaf8";grid.appendChild(cell);return}
+
+    var dStr=vy+"-"+String(vm+1).padStart(2,"0")+"-"+String(day).padStart(2,"0");
+    var dm=dayMap[dStr];
+    var isToday=dStr===todayStr;
+    var isSel=dStr===window._pfCalSelDay;
+
+    var bgColor=isSel?"#eaf0e8":isToday?"#f0f5ef":"";
+    cell.style.background=bgColor;
+    cell.dataset.bg=bgColor;
+    cell.onmouseover=function(){if(!this.dataset.bg)this.style.background="#f5f5f5"};
+    cell.onmouseout=function(){this.style.background=this.dataset.bg||""};
+
+    // Número do dia
+    var numWrap=ce("div");numWrap.style.cssText="display:flex;justify-content:center;margin-bottom:3px";
+    var num=ce("span");
+    if(isToday||isSel){
+      num.style.cssText="width:22px;height:22px;border-radius:50%;background:"+(isSel?"var(--pf)":"var(--pf)")+";color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center";
+    } else {
+      num.style.cssText="font-size:11px;font-weight:400;color:#374151;width:22px;height:22px;display:flex;align-items:center;justify-content:center";
+    }
+    num.textContent=day;numWrap.appendChild(num);cell.appendChild(numWrap);
+
+    // Indicadores coloridos
+    if(dm){
+      var dotsWrap=ce("div");dotsWrap.style.cssText="display:flex;flex-direction:column;gap:1px";
+      if(dm.in){var p1=ce("div");p1.style.cssText="height:4px;border-radius:3px;background:#059669";dotsWrap.appendChild(p1)}
+      if(dm.out){var p2=ce("div");p2.style.cssText="height:4px;border-radius:3px;background:#dc2626";dotsWrap.appendChild(p2)}
+      if(dm.hoje){var p3=ce("div");p3.style.cssText="height:4px;border-radius:3px;background:#4A6741";dotsWrap.appendChild(p3)}
+      if(dm.pend){var p4=ce("div");p4.style.cssText="height:4px;border-radius:3px;background:#f59e0b";dotsWrap.appendChild(p4)}
+      if(dm.venc){var p5=ce("div");p5.style.cssText="height:4px;border-radius:3px;background:#dc2626;opacity:.5";dotsWrap.appendChild(p5)}
+      cell.appendChild(dotsWrap)
+    }
+
+    (function(ds){cell.onclick=function(){window._pfCalSelDay=ds;nav("pfcalend")}})(dStr);
+    grid.appendChild(cell)
+  });
+  calCard.appendChild(grid);
+
+  // Legenda
+  var leg=ce("div");leg.style.cssText="display:flex;gap:10px;font-size:9px;color:#9ca3af;padding:6px 2px 0;flex-wrap:wrap";
+  [{c:"#059669",l:"Receita"},{c:"#dc2626",l:"Despesa"},{c:"#f59e0b",l:"A vencer"},{c:"#4A6741",l:"Vence hoje"},{c:"rgba(220,38,38,.4)",l:"Vencido"}].forEach(function(x){
+    var s=ce("span");s.style.cssText="display:flex;align-items:center;gap:3px";
+    var dot=ce("span");dot.style.cssText="width:8px;height:4px;border-radius:3px;background:"+x.c+";display:inline-block";
+    s.appendChild(dot);s.appendChild(document.createTextNode(x.l));leg.appendChild(s)
+  });calCard.appendChild(leg);
+  c.appendChild(calCard);
+
+  // ── Detalhe do dia selecionado ────────────────────────────────
+  var selDate=window._pfCalSelDay;
+  var selD=new Date(selDate+"T12:00:00");
+  var selLabel=selD.getDate()+" de "+MF[selD.getMonth()]+" "+selD.getFullYear();
+
+  var txDay=txPF.filter(function(t){return t.date===selDate});
+  var fatDay=faturas.filter(function(f){return f.date===selDate});
+  var parcDay=parcelas.filter(function(p){return p.date===selDate});
+
+  var detCard=ce("div","card");detCard.style.marginTop="8px";
+  var detSh=ce("div","sh");
+  detSh.innerHTML="<div class='st'>"+selLabel+"</div>";
+  detCard.appendChild(detSh);
+
+  if(!txDay.length&&!fatDay.length&&!parcDay.length){
+    var emDiv=ce("div");emDiv.style.cssText="text-align:center;padding:16px;color:#9ca3af;font-size:12px";
+    emDiv.textContent="Nenhum evento neste dia";detCard.appendChild(emDiv)
+  }
+
+  // Transações do dia
+  txDay.forEach(function(t){
+    var rw=ce("div","txr");
+    var isPend=t.pending;
+    var bgCol=t.type==="entrada"?(isPend?"#fef3c7":"#d1fae5"):(isPend?"#fef3c7":"#fee2e2");
+    var statusLabel=isPend?"<b style='color:#f59e0b'>Pendente</b>":
+      (t.type==="entrada"?"<b style='color:#059669'>Recebido</b>":"<b style='color:#dc2626'>Pago</b>");
+    rw.innerHTML="<div class='txi' style='background:"+bgCol+"'>"+(isPend?"⏳":(t.type==="entrada"?"💰":"💸"))+"</div>"
+      +"<div class='txin'><div class='txd'>"+t.description+"</div>"
+      +"<div class='txm'>"+t.category+" · "+statusLabel+"</div></div>"
+      +"<span class='txa' style='color:"+(t.type==="entrada"?"#059669":"#dc2626")+"'>"+R(t.amount)+"</span>";
+    detCard.appendChild(rw)
+  });
+
+  // Faturas do dia
+  fatDay.forEach(function(f){
+    var isVenc=!f.paid&&f.date<todayStr;
+    var isHoje=!f.paid&&f.date===todayStr;
+    var bgCol=f.paid?"#d1fae5":isVenc?"#fee2e2":isHoje?"#fef3c7":"#fef9c3";
+    var ic=f.paid?"✅":isVenc?"🔴":isHoje?"⚠️":"💳";
+    var statusLabel=f.paid?"<b style='color:#059669'>Pago</b>":
+      isVenc?"<b style='color:#dc2626'>Vencido</b>":
+      isHoje?"<b style='color:#f59e0b'>Vence hoje</b>":
+      "<b style='color:#d97706'>A vencer</b>";
+    var rw=ce("div","txr");
+    rw.innerHTML="<div class='txi' style='background:"+bgCol+"'>"+ic+"</div>"
+      +"<div class='txin'><div class='txd'>"+f.description+"</div>"
+      +"<div class='txm'>"+statusLabel+"</div></div>"
+      +(f.amount?"<span class='txa' style='color:"+(f.paid?"#059669":"#dc2626")+"'>"+R(f.amount)+"</span>":"");
+    detCard.appendChild(rw)
+  });
+
+  // Parcelas do dia
+  parcDay.forEach(function(p){
+    var isVenc=!p.paid&&p.date<todayStr;
+    var isHoje=!p.paid&&p.date===todayStr;
+    var bgCol=p.paid?"#d1fae5":isVenc?"#fee2e2":isHoje?"#fef3c7":"#fef9c3";
+    var ic=p.paid?"✅":isVenc?"🔴":isHoje?"⚠️":"📅";
+    var statusLabel=p.paid?"<b style='color:#059669'>Pago</b>":
+      isVenc?"<b style='color:#dc2626'>Vencido</b>":
+      isHoje?"<b style='color:#f59e0b'>Vence hoje</b>":
+      "<b style='color:#d97706'>A vencer</b>";
+    var rw=ce("div","txr");
+    rw.innerHTML="<div class='txi' style='background:"+bgCol+"'>"+ic+"</div>"
+      +"<div class='txin'><div class='txd'>"+p.description+"</div>"
+      +"<div class='txm'>Parcela · "+statusLabel+"</div></div>"
+      +"<span class='txa' style='color:"+(p.paid?"#059669":"#dc2626")+"'>"+R(p.amount)+"</span>";
+    detCard.appendChild(rw)
+  });
+
+  c.appendChild(detCard)
+}
+
 function rCalend(c,mk){
   var today=new Date();var todayStr=tod();
   if(!window._calSelDay)window._calSelDay=todayStr;
@@ -6568,13 +6954,13 @@ window.onload=function(){
   setMode("signup");
   // Sidebar panel switch handlers
   var ppf=gi("psb-pf"),ppj=gi("psb-pj"),sbl=gi("sb-logout"),tbm=gi("tb-menu");
-  if(ppf)ppf.onclick=function(){panel="pf";tab="dash";renderSB();renderBN();nav("dash")};
+  if(ppf)ppf.onclick=function(){panel="pf";tab="dash";renderSB();renderBN();nav("dash");setTimeout(checkVencimentosPF,300)};
   if(ppj)ppj.onclick=function(){if(D.perfil==="empreendedora"){panel="pj";tab="dash";renderSB();renderBN();nav("dash");checkPJTour()}else{alert("Acesso ao Negócio disponível apenas no Plano Negócio. 🚀")}};
   if(sbl)sbl.onclick=logout;
   if(tbm)tbm.onclick=function(){var sb=gi("sb");if(sb)sb.classList.toggle("sb-open")};
   // Sidebar panel switch
   var ppf=gi("psb-pf"),ppj=gi("psb-pj"),sbl=gi("sb-logout");
-  if(ppf)ppf.onclick=function(){panel="pf";tab="dash";renderSB();renderBN();nav("dash")};
+  if(ppf)ppf.onclick=function(){panel="pf";tab="dash";renderSB();renderBN();nav("dash");setTimeout(checkVencimentosPF,300)};
   if(ppj)ppj.onclick=function(){panel="pj";tab="dash";renderSB();renderBN();nav("dash");checkPJTour()};
   if(sbl)sbl.onclick=logout;
   // Mobile hamburger
