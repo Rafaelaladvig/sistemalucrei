@@ -3926,6 +3926,7 @@ function rPJD(c,mk){
   hero.style.background="linear-gradient(135deg,#C4693A,#9e4f27)";
   hero.innerHTML="<div class='hl'>FLUXO DE CAIXA</div>"
     +"<div class='hv'>"+R(lucro)+"</div>"
+    +"<div style='font-size:11px;color:rgba(255,255,255,.45);font-weight:400;margin-bottom:6px'>"+(lucro>=0?"saldo positivo ✓":"atenção: saldo negativo")+"</div>"
     +"<div class='hrow' style='grid-template-columns:1fr 1fr'>"
     +"<div class='hi'><div class='hil'>SALDO CONTAS</div><div class='hiv' style='color:#f5d9ca'>"+R(saldoContas)+"</div></div>"
     +"<div class='hi'><div class='hil'>ENTRADAS</div><div class='hiv' style='color:#86efac'>"+R(fat)+"</div></div>"
