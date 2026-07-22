@@ -1156,6 +1156,11 @@ function renderSB(){
   var nm=gi("sb-nm");var em=gi("sb-em");
   if(nm)nm.textContent=D.userName;
   if(em)em.textContent=D.userEmail;
+  // Cor do nome/email conforme painel
+  var nmColor=panel==="pj"?"var(--pj)":"var(--pf)";
+  var emColor=panel==="pj"?"var(--pjd, #9e4f27)":"var(--pfd)";
+  if(nm)nm.style.color=nmColor;
+  if(em)em.style.color=emColor;
   // Atualizar fundo do header da sidebar conforme painel
   var brand=gi("sb-brand");
   if(brand)brand.className=panel==="pj"?"pj":"";
