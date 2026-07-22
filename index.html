@@ -3028,9 +3028,10 @@ async function lunaMsg(p,text,sys,container,AC){
   container.appendChild(typ);container.scrollTop=container.scrollHeight;
   var msgs=lmsgs[p].map(function(m){return{role:m.r==="u"?"user":"assistant",content:m.c}});
   var token=ls_get("lc-api-token")||"";
+  var email=ls_get("lc-api-email")||"";
   fetch(API_URL+"/api/luna",{
     method:"POST",
-    headers:{"Content-Type":"application/json","Authorization":"Bearer "+token},
+    headers:{"Content-Type":"application/json","x-session-token":token,"x-session-email":email},
     body:JSON.stringify({messages:msgs,system:sys})
   })
   .then(function(r){return r.json()})
