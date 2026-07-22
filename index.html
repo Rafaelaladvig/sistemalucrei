@@ -3021,13 +3021,26 @@ async function lunaMsg(p,text,sys,container,AC){
   var typ=ce("div","lm a");var av=ce("div","lav");av.style.background="linear-gradient(135deg,"+AC+",#ec4899)";av.textContent="✨";typ.appendChild(av);
   var tb=ce("div","lbub");tb.innerHTML="<span class='dot' style='background:"+AC+"'></span><span class='dot' style='background:"+AC+"'></span><span class='dot' style='background:"+AC+"'></span>";typ.appendChild(tb);
   container.appendChild(typ);container.scrollTop=container.scrollHeight;
-  try{
-    var msgs=lmsgs[p].map(function(m){return{role:m.r==="u"?"user":"assistant",content:m.c}});
-    var res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json","anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:500,system:sys,messages:msgs})});
-    var j=await res.json();var raw=j.content&&j.content[0]?j.content[0].text:"Desculpe, tente novamente! 💙";
-    typ.remove();var am={r:"a",c:raw};lmsgs[p].push(am);container.appendChild(mkMsg(am,AC))
-  }catch(e){typ.remove();var proto=window.location.protocol==="file:"?" (A Luna funciona online — hospede no Netlify)":"";var em={r:"a",c:"Hmm, problema de conexão."+proto+" 💙"};lmsgs[p].push(em);container.appendChild(mkMsg(em,AC))}
-  container.scrollTop=container.scrollHeight
+  var msgs=lmsgs[p].map(function(m){return{role:m.r==="u"?"user":"assistant",content:m.c}});
+  var token=ls_get("lc-api-token")||"";
+  fetch(API_URL+"/api/luna",{
+    method:"POST",
+    headers:{"Content-Type":"application/json","Authorization":"Bearer "+token},
+    body:JSON.stringify({messages:msgs,system:sys})
+  })
+  .then(function(r){return r.json()})
+  .then(function(j){
+    typ.remove();
+    var raw=(j.ok&&j.text)?j.text:"Desculpe, tente novamente! 💙";
+    var am={r:"a",c:raw};lmsgs[p].push(am);container.appendChild(mkMsg(am,AC));
+    container.scrollTop=container.scrollHeight;
+  })
+  .catch(function(e){
+    typ.remove();
+    var em={r:"a",c:"Hmm, problema de conexão. 💙"};
+    lmsgs[p].push(em);container.appendChild(mkMsg(em,AC));
+    container.scrollTop=container.scrollHeight;
+  });
 }
 
 // ═══ PJ STUBS (preserved from previous version) ══════════════════════════════
