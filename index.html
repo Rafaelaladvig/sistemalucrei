@@ -1207,45 +1207,160 @@ function renderSB(){
 
 function openInativas(allClients){
   var bd2=gi("m2b");bd2.innerHTML="";
-  var tt=ce("div","mt");tt.innerHTML="⚠️ Clientes Inativas <span style='font-size:13px;font-weight:400;color:#9ca3af'>(+60 dias)</span>";bd2.appendChild(tt);
+
+  // ── Título ────────────────────────────────────────────────────
+  var tt=ce("div","mt");
+  tt.innerHTML="🔁 Recuperação de clientes <span style='font-size:12px;font-weight:400;color:#9ca3af'>inativas +60 dias</span>";
+  bd2.appendChild(tt);
+
+  // ── Cálculo (mesmo critério do Dashboard) ─────────────────────
   function getRefDate(cl){
     if(cl.lastVisit)return cl.lastVisit;
-    var la=(D.agenda||[]).filter(function(a){return String(a.clientId)===String(cl.id)&&a.status==="concluido"&&(a.completedAt||a.date)}).sort(function(a,b){return new Date(b.completedAt||b.date)-new Date(a.completedAt||a.date)})[0];
+    var la=(D.agenda||[]).filter(function(a){
+      return String(a.clientId)===String(cl.id)&&a.status==="concluido"&&(a.completedAt||a.date);
+    }).sort(function(a,b){return new Date(b.completedAt||b.date)-new Date(a.completedAt||a.date)})[0];
     if(la)return la.completedAt||la.date;
-    var lt=(D.pj.transactions||[]).filter(function(t){return t.type==="entrada"&&String(t.clientId)===String(cl.id)&&t.date}).sort(function(a,b){return new Date(b.date)-new Date(a.date)})[0];
+    var lt=(D.pj.transactions||[]).filter(function(t){
+      return t.type==="entrada"&&String(t.clientId)===String(cl.id)&&t.date;
+    }).sort(function(a,b){return new Date(b.date)-new Date(a.date)})[0];
     return lt?lt.date:null;
   }
-  var inact=(allClients||[]).map(function(cl){return Object.assign({},cl,{_ref:getRefDate(cl)})}).filter(function(cl){
+
+  function getUltAtend(cl){
+    return (D.agenda||[]).filter(function(a){
+      return String(a.clientId)===String(cl.id)&&a.status==="concluido";
+    }).sort(function(a,b){
+      return new Date(b.completedAt||b.date)-new Date(a.completedAt||a.date);
+    })[0]||null;
+  }
+
+  var inact=(allClients||[]).map(function(cl){
+    return Object.assign({},cl,{_ref:getRefDate(cl),_ultAtend:getUltAtend(cl)});
+  }).filter(function(cl){
     if(!cl._ref)return false;
     return(new Date()-new Date(cl._ref))/86400000>60;
   }).sort(function(a,b){return new Date(a._ref)-new Date(b._ref)});
+
+  // ── Subtítulo ─────────────────────────────────────────────────
+  var sub=ce("div");
+  sub.style.cssText="font-size:12px;color:#9ca3af;margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid var(--bd)";
+  sub.textContent=inact.length
+    ? inact.length+" cliente"+(inact.length>1?"s":"")+" sem atendimento há mais de 60 dias"
+    : "Nenhuma cliente inativa encontrada";
+  bd2.appendChild(sub);
+
   if(!inact.length){
-    var em=ce("div");em.style.cssText="padding:20px;text-align:center;color:#9ca3af;font-size:13px";
-    em.textContent="Nenhuma cliente está há mais de 60 dias sem atendimento.";bd2.appendChild(em);
-  } else {
-    var sub=ce("div");sub.style.cssText="font-size:12px;color:#9ca3af;padding:0 0 12px;border-bottom:1px solid var(--bd);margin-bottom:12px";
-    sub.textContent=inact.length+" cliente"+(inact.length>1?"s":"")+" precisam de reengajamento";bd2.appendChild(sub);
-    inact.forEach(function(cl,i){
+    var em=ce("div");em.style.cssText="padding:32px 0;text-align:center;color:#9ca3af;font-size:13px";
+    em.innerHTML="✅<br><br>Nenhuma cliente está há mais de 60 dias<br>sem atendimento.";
+    bd2.appendChild(em);
+    var cl2=ce("button","btn bpj");cl2.style.width="100%";cl2.textContent="Fechar";
+    cl2.onclick=function(){oM(false,"m2")};bd2.appendChild(cl2);
+    oM(true,"m2");return;
+  }
+
+  // ── Campo de busca ────────────────────────────────────────────
+  var srchWrap=ce("div");srchWrap.style.cssText="position:relative;margin-bottom:12px";
+  var srch=ce("input","inp");
+  srch.placeholder="🔍 Buscar cliente por nome ou telefone...";
+  srch.style.cssText="width:100%;padding:10px 14px;border-radius:10px;border:1.5px solid var(--bd);font-size:13px;box-sizing:border-box";
+  srchWrap.appendChild(srch);bd2.appendChild(srchWrap);
+
+  // ── Lista ─────────────────────────────────────────────────────
+  var listEl=ce("div");listEl.id="inact-list";bd2.appendChild(listEl);
+
+  function renderList(filter){
+    listEl.innerHTML="";
+    var filtered=filter
+      ? inact.filter(function(cl){
+          var q=filter.toLowerCase();
+          return (cl.name||"").toLowerCase().includes(q)||(cl.phone||"").includes(q);
+        })
+      : inact;
+
+    if(!filtered.length){
+      var noR=ce("div");noR.style.cssText="padding:20px;text-align:center;color:#9ca3af;font-size:12px";
+      noR.textContent="Nenhuma cliente encontrada para \""+filter+"\"";
+      listEl.appendChild(noR);return;
+    }
+
+    filtered.forEach(function(cl){
       var days=Math.round((new Date()-new Date(cl._ref))/86400000);
-      var ultAtend=(D.agenda||[]).filter(function(a){return String(a.clientId)===String(cl.id)&&a.status==="concluido"}).sort(function(a,b){return new Date(b.completedAt||b.date)-new Date(a.completedAt||a.date)})[0];
-      var card=ce("div");card.style.cssText="background:#fff;border:1px solid var(--bd);border-radius:12px;padding:14px;margin-bottom:10px";
-      var hdr=ce("div");hdr.style.cssText="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px";
-      var nw=ce("div");
-      var ne=ce("div");ne.style.cssText="font-size:13px;font-weight:700;color:var(--tx)";ne.textContent=(i+1)+". "+cl.name;nw.appendChild(ne);
-      if(cl.phone){var ph=ce("div");ph.style.cssText="font-size:11px;color:#6b7280;margin-top:2px";ph.textContent="📱 "+cl.phone;nw.appendChild(ph)}
-      hdr.appendChild(nw);
-      var badge=ce("div");badge.style.cssText="background:#fee2e2;color:#dc2626;border-radius:20px;padding:3px 10px;font-size:11px;font-weight:700;white-space:nowrap";
-      badge.textContent=days+" dias";hdr.appendChild(badge);card.appendChild(hdr);
-      var det=ce("div");det.style.cssText="font-size:11px;color:#6b7280;display:grid;grid-template-columns:1fr 1fr;gap:4px";
+      var ua=cl._ultAtend;
       var ds=cl._ref?new Date(cl._ref).toLocaleDateString("pt-BR"):"—";
-      det.innerHTML="<div>📅 Último atend.: <b style='color:var(--tx)'>"+ds+"</b></div>"
-        +(ultAtend?"<div>✂️ Serviço: <b style='color:var(--tx)'>"+ultAtend.service+"</b></div>":"<div>✂️ Serviço: <b>—</b></div>")
-        +(ultAtend&&ultAtend.value?"<div>💰 Valor: <b style='color:#059669'>"+R(ultAtend.value)+"</b></div>":"<div>💰 Valor: <b>—</b></div>")
-        +"<div>⏳ Inativa há: <b style='color:#dc2626'>"+days+" dias</b></div>";
-      card.appendChild(det);bd2.appendChild(card);
+      var urgency=days>120?"#7f1d1d":days>90?"#dc2626":"#C4693A";
+
+      var card=ce("div");
+      card.style.cssText="background:#fff;border:1px solid var(--bd);border-radius:14px;padding:14px 16px;margin-bottom:10px;cursor:pointer;transition:box-shadow .15s";
+      card.onmouseover=function(){this.style.boxShadow="0 4px 16px rgba(0,0,0,.08)"};
+      card.onmouseout=function(){this.style.boxShadow=""};
+
+      // Cabeçalho: nome + badge dias
+      var hdr=ce("div");hdr.style.cssText="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px";
+      var nameEl=ce("div");nameEl.style.cssText="font-size:14px;font-weight:700;color:var(--tx)";nameEl.textContent=cl.name||"—";
+      var badge=ce("div");badge.style.cssText="font-size:11px;font-weight:700;color:#fff;background:"+urgency+";border-radius:20px;padding:3px 10px;white-space:nowrap";
+      badge.textContent=days+" dias";
+      hdr.appendChild(nameEl);hdr.appendChild(badge);card.appendChild(hdr);
+
+      // Info: último atendimento, serviço, valor
+      var info=ce("div");info.style.cssText="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:11.5px;color:#6b7280;margin-bottom:10px";
+      function infoBlock(label,val,valCol){
+        return "<div><div style='font-size:10px;letter-spacing:.5px;text-transform:uppercase;color:#9ca3af;margin-bottom:2px'>"+label+"</div>"
+          +"<div style='font-weight:600;color:"+(valCol||"var(--tx)")+"'>"+val+"</div></div>";
+      }
+      info.innerHTML=infoBlock("Último atend.",ds)
+        +infoBlock("Dias sem atend.",days+" dias",urgency)
+        +infoBlock("Serviço",ua?ua.service:"—")
+        +infoBlock("Valor",ua&&ua.value?R(ua.value):"—","#059669");
+      card.appendChild(info);
+
+      // Rodapé: telefone + botão WhatsApp
+      if(cl.phone){
+        var foot=ce("div");foot.style.cssText="display:flex;align-items:center;justify-content:space-between;padding-top:10px;border-top:1px solid var(--bd)";
+        var phEl=ce("div");phEl.style.cssText="font-size:12px;color:#6b7280;display:flex;align-items:center;gap:5px";
+        phEl.innerHTML="📱 <span>"+cl.phone+"</span>";
+        var waBtn=ce("button");
+        waBtn.style.cssText="background:#25D366;color:#fff;border:none;border-radius:8px;padding:6px 12px;font-size:11.5px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:5px";
+        waBtn.innerHTML="<svg width='13' height='13' viewBox='0 0 24 24' fill='#fff'><path d='M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z'/></svg>Enviar mensagem";
+        waBtn.onclick=function(e){
+          e.stopPropagation();
+          var num=cl.phone.replace(/\D/g,"");
+          if(num.length>0){
+            window.open("https://wa.me/55"+num,"_blank");
+          } else {
+            alert("Número de telefone inválido.");
+          }
+        };
+        foot.appendChild(phEl);foot.appendChild(waBtn);card.appendChild(foot);
+      }
+
+      // Clique no card abre ficha da cliente
+      (function(clientId){
+        card.onclick=function(){
+          oM(false,"m2");
+          // Navegar para clientes e abrir a ficha
+          nav("atend");
+          setTimeout(function(){
+            var clBtns=document.querySelectorAll("[data-cli-id='"+clientId+"']");
+            if(clBtns.length)clBtns[0].click();
+          },300);
+        };
+      })(cl.id);
+
+      listEl.appendChild(card);
     });
   }
-  var cl2=ce("button","btn bpf");cl2.style.cssText="margin-top:4px;width:100%";cl2.textContent="Fechar";cl2.onclick=function(){oM(false,"m2")};bd2.appendChild(cl2);
+
+  renderList("");
+  srch.oninput=function(){renderList(srch.value.trim())};
+  setTimeout(function(){srch.focus()},100);
+
+  // ── Botão fechar ──────────────────────────────────────────────
+  var cl2=ce("button","btn bpj");
+  cl2.style.cssText="width:100%;margin-top:8px";
+  cl2.textContent="Fechar";
+  cl2.onclick=function(){oM(false,"m2")};
+  bd2.appendChild(cl2);
+
   oM(true,"m2");
 }
 
