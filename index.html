@@ -247,6 +247,7 @@ button,input,select,textarea{font-family:inherit;font-size:14px}
   box-shadow:0 4px 14px rgba(74,103,65,.4);
   line-height:1;
 }
+@media(min-width:769px){#add-fab{display:none!important}}
 @media(max-width:768px){#add-fab{display:flex}}
 #luna-fab{
   display:none;
@@ -1203,6 +1204,50 @@ function renderSB(){
 // ═══════════════════════════════════════════════════════════════════
 // AVISOS DE VENCIMENTO PF
 // ═══════════════════════════════════════════════════════════════════
+
+function openInativas(allClients){
+  var bd2=gi("m2b");bd2.innerHTML="";
+  var tt=ce("div","mt");tt.innerHTML="⚠️ Clientes Inativas <span style='font-size:13px;font-weight:400;color:#9ca3af'>(+60 dias)</span>";bd2.appendChild(tt);
+  function getRefDate(cl){
+    if(cl.lastVisit)return cl.lastVisit;
+    var la=(D.agenda||[]).filter(function(a){return String(a.clientId)===String(cl.id)&&a.status==="concluido"&&(a.completedAt||a.date)}).sort(function(a,b){return new Date(b.completedAt||b.date)-new Date(a.completedAt||a.date)})[0];
+    if(la)return la.completedAt||la.date;
+    var lt=(D.pj.transactions||[]).filter(function(t){return t.type==="entrada"&&String(t.clientId)===String(cl.id)&&t.date}).sort(function(a,b){return new Date(b.date)-new Date(a.date)})[0];
+    return lt?lt.date:null;
+  }
+  var inact=(allClients||[]).map(function(cl){return Object.assign({},cl,{_ref:getRefDate(cl)})}).filter(function(cl){
+    if(!cl._ref)return false;
+    return(new Date()-new Date(cl._ref))/86400000>60;
+  }).sort(function(a,b){return new Date(a._ref)-new Date(b._ref)});
+  if(!inact.length){
+    var em=ce("div");em.style.cssText="padding:20px;text-align:center;color:#9ca3af;font-size:13px";
+    em.textContent="Nenhuma cliente está há mais de 60 dias sem atendimento.";bd2.appendChild(em);
+  } else {
+    var sub=ce("div");sub.style.cssText="font-size:12px;color:#9ca3af;padding:0 0 12px;border-bottom:1px solid var(--bd);margin-bottom:12px";
+    sub.textContent=inact.length+" cliente"+(inact.length>1?"s":"")+" precisam de reengajamento";bd2.appendChild(sub);
+    inact.forEach(function(cl,i){
+      var days=Math.round((new Date()-new Date(cl._ref))/86400000);
+      var ultAtend=(D.agenda||[]).filter(function(a){return String(a.clientId)===String(cl.id)&&a.status==="concluido"}).sort(function(a,b){return new Date(b.completedAt||b.date)-new Date(a.completedAt||a.date)})[0];
+      var card=ce("div");card.style.cssText="background:#fff;border:1px solid var(--bd);border-radius:12px;padding:14px;margin-bottom:10px";
+      var hdr=ce("div");hdr.style.cssText="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px";
+      var nw=ce("div");
+      var ne=ce("div");ne.style.cssText="font-size:13px;font-weight:700;color:var(--tx)";ne.textContent=(i+1)+". "+cl.name;nw.appendChild(ne);
+      if(cl.phone){var ph=ce("div");ph.style.cssText="font-size:11px;color:#6b7280;margin-top:2px";ph.textContent="📱 "+cl.phone;nw.appendChild(ph)}
+      hdr.appendChild(nw);
+      var badge=ce("div");badge.style.cssText="background:#fee2e2;color:#dc2626;border-radius:20px;padding:3px 10px;font-size:11px;font-weight:700;white-space:nowrap";
+      badge.textContent=days+" dias";hdr.appendChild(badge);card.appendChild(hdr);
+      var det=ce("div");det.style.cssText="font-size:11px;color:#6b7280;display:grid;grid-template-columns:1fr 1fr;gap:4px";
+      var ds=cl._ref?new Date(cl._ref).toLocaleDateString("pt-BR"):"—";
+      det.innerHTML="<div>📅 Último atend.: <b style='color:var(--tx)'>"+ds+"</b></div>"
+        +(ultAtend?"<div>✂️ Serviço: <b style='color:var(--tx)'>"+ultAtend.service+"</b></div>":"<div>✂️ Serviço: <b>—</b></div>")
+        +(ultAtend&&ultAtend.value?"<div>💰 Valor: <b style='color:#059669'>"+R(ultAtend.value)+"</b></div>":"<div>💰 Valor: <b>—</b></div>")
+        +"<div>⏳ Inativa há: <b style='color:#dc2626'>"+days+" dias</b></div>";
+      card.appendChild(det);bd2.appendChild(card);
+    });
+  }
+  var cl2=ce("button","btn bpf");cl2.style.cssText="margin-top:4px;width:100%";cl2.textContent="Fechar";cl2.onclick=function(){oM(false,"m2")};bd2.appendChild(cl2);
+  oM(true,"m2");
+}
 
 function fecharAvisoVenc(){var el=document.getElementById("aviso-venc");if(el)el.remove()}
 function fecharAvisoVencCalend(){fecharAvisoVenc();nav("pfcalend")}
@@ -3913,70 +3958,7 @@ function rPJDash(c,mk){
     kpiCard({l:"Cancelamentos",v:String(cancelados),s:taxaCancelamento+"% de agendados",col:taxaCancelamento>20?"#dc2626":taxaCancelamento>10?"#f59e0b":"#059669",tip:"Agendamentos cancelados no mês."}),
     kpiCard({l:"Ticket Médio",v:R(ticket),s:"por atendimento",col:"#4A6741",tip:"Faturamento ÷ atendimentos. Aumentar ticket = crescer sem mais clientes."}),
     kpiCard({l:"LTV Médio",v:ltv?R(ltv):"—",s:"valor histórico por cliente",col:"#4A6741",tip:"Lifetime Value: quanto cada cliente gasta com você ao longo do tempo."}),
-    kpiCard({l:"Inativas +60d",v:String(churnCount),s:"sem visita há 60+ dias",col:churnCount>0?"#dc2626":"#059669",tip:"Clientes que precisam de reengajamento.",onclick:churnCount>0?function(){
-  var bd2=gi("m2b");bd2.innerHTML="";
-  var tt=ce("div","mt");tt.innerHTML="⚠️ Clientes Inativas <span style='font-size:13px;font-weight:400;color:#9ca3af'>(+60 dias)</span>";bd2.appendChild(tt);
-  // Filtrar inativas com dados completos
-  var inact=allClients.filter(function(cl){
-    var refDate=cl.lastVisit;
-    if(!refDate){
-      var lastAgenda=(D.agenda||[]).filter(function(a){
-        return String(a.clientId)===String(cl.id)&&a.status==="concluido"&&(a.completedAt||a.date);
-      }).sort(function(a,b){return new Date(b.completedAt||b.date)-new Date(a.completedAt||a.date)})[0];
-      if(lastAgenda)refDate=lastAgenda.completedAt||lastAgenda.date;
-    }
-    if(!refDate){
-      var lastTx=(D.pj.transactions||[]).filter(function(t){
-        return t.type==="entrada"&&String(t.clientId)===String(cl.id)&&t.date;
-      }).sort(function(a,b){return new Date(b.date)-new Date(a.date)})[0];
-      if(!lastTx)return false;
-      refDate=lastTx.date;
-    }
-    return(new Date()-new Date(refDate))/86400000>60;
-  }).map(function(cl){
-    var ref=cl.lastVisit;
-    if(!ref){
-      var la=(D.agenda||[]).filter(function(a){return String(a.clientId)===String(cl.id)&&a.status==="concluido"}).sort(function(a,b){return new Date(b.completedAt||b.date)-new Date(a.completedAt||a.date)})[0];
-      if(la)ref=la.completedAt||la.date;
-    }
-    if(!ref){
-      var lt=(D.pj.transactions||[]).filter(function(t){return t.type==="entrada"&&String(t.clientId)===String(cl.id)&&t.date}).sort(function(a,b){return new Date(b.date)-new Date(a.date)})[0];
-      if(lt)ref=lt.date;
-    }
-    return Object.assign({},cl,{_refDate:ref||null});
-  }).sort(function(a,b){return new Date(a._refDate)-new Date(b._refDate)});
-  if(!inact.length){
-    var em=ce("div");em.style.cssText="padding:20px;text-align:center;color:#9ca3af;font-size:13px";
-    em.textContent="Nenhuma cliente está há mais de 60 dias sem atendimento.";bd2.appendChild(em);
-  } else {
-    var sub=ce("div");sub.style.cssText="font-size:12px;color:#9ca3af;padding:0 0 12px;border-bottom:1px solid var(--bd);margin-bottom:12px";
-    sub.textContent=inact.length+" cliente"+(inact.length>1?"s":"")+" precisam de reengajamento";bd2.appendChild(sub);
-    inact.forEach(function(cl,idx){
-      var days=Math.round((new Date()-new Date(cl._refDate))/86400000);
-      // Buscar último atendimento concluído
-      var ultAtend=(D.agenda||[]).filter(function(a){
-        return String(a.clientId)===String(cl.id)&&a.status==="concluido";
-      }).sort(function(a,b){return new Date(b.completedAt||b.date)-new Date(a.completedAt||a.date)})[0];
-      var card=ce("div");card.style.cssText="background:#fff;border:1px solid var(--bd);border-radius:12px;padding:14px;margin-bottom:10px";
-      var header=ce("div");header.style.cssText="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px";
-      var nameWrap=ce("div");
-      var nameEl=ce("div");nameEl.style.cssText="font-size:13px;font-weight:700;color:var(--tx)";nameEl.textContent=(idx+1)+". "+cl.name;
-      nameWrap.appendChild(nameEl);
-      if(cl.phone){var ph=ce("div");ph.style.cssText="font-size:11px;color:#6b7280;margin-top:2px";ph.textContent="📱 "+cl.phone;nameWrap.appendChild(ph)}
-      header.appendChild(nameWrap);
-      var badge=ce("div");badge.style.cssText="background:#fee2e2;color:#dc2626;border-radius:20px;padding:3px 10px;font-size:11px;font-weight:700;white-space:nowrap";
-      badge.textContent=days+" dias";header.appendChild(badge);card.appendChild(header);
-      var details=ce("div");details.style.cssText="font-size:11px;color:#6b7280;display:grid;grid-template-columns:1fr 1fr;gap:4px";
-      var lastDateStr=cl._refDate?new Date(cl._refDate).toLocaleDateString("pt-BR"):"—";
-      details.innerHTML="<div>📅 Último atend.: <b style='color:var(--tx)'>"+lastDateStr+"</b></div>"
-        +(ultAtend?"<div>✂️ Serviço: <b style='color:var(--tx)'>"+ultAtend.service+"</b></div>":"<div>✂️ Serviço: <b>—</b></div>")
-        +(ultAtend&&ultAtend.value?"<div>💰 Valor: <b style='color:#059669'>"+R(ultAtend.value)+"</b></div>":"<div>💰 Valor: <b>—</b></div>")
-        +"<div>⏳ Inativa há: <b style='color:#dc2626'>"+days+" dias</b></div>";
-      card.appendChild(details);bd2.appendChild(card);
-    });
-  }
-  var cl2=ce("button","btn bpf");cl2.style.cssText="margin-top:4px;width:100%";cl2.textContent="Fechar";cl2.onclick=function(){oM(false,"m2")};bd2.appendChild(cl2);
-  oM(true,"m2")}:null})
+    kpiCard({l:"Inativas +60d",v:String(churnCount),s:"sem visita há 60+ dias",col:churnCount>0?"#dc2626":"#059669",tip:"Clientes que precisam de reengajamento.",onclick:function(){openInativas(allClients)}})
   ]));
   // Top 5 clients
   if(allClients.length){
