@@ -3249,45 +3249,230 @@ function oAddCard(){
 // ═══ PLAN, ACCOUNTS, HISTORY, CONFIG ════════════════════════════════════════
 function rPlan(c,mk){
   var cats=D.pfOutCats.length?D.pfOutCats:DEF_OUT;
-  var txs=(D.pf.transactions||[]).filter(function(t){return t.date&&t.date.startsWith(mk)});
-  var outs=txs.filter(function(t){return t.type==="saida"});
+  var inCats=D.pfInCats.length?D.pfInCats:DEF_IN;
+  var txs=(D.pf.transactions||[]).filter(function(t){return t.date&&t.date.startsWith(mk)&&!t.pending});
+  var outs=txs.filter(function(t){return t.type==="saida"&&(t.cat||t.category)!=="Investimento"});
+  var ins=txs.filter(function(t){return t.type==="entrada"});
   var plan=(D.pf.plan||{})[mk]||{};
-  var card=ce("div","card");
-  var sh=ce("div","sh");sh.innerHTML="<div class='st'>Limite por categoria</div>";card.appendChild(sh);
+  var limts=plan.limits||{};
+  var inLimts=plan.inLimits||{};
+  var metaPoup=plan.metaPoupanca||0;
+  var recPrev=plan.receitaPrevista||0;
+
+  function savePlan(upd){
+    if(!D.pf.plan)D.pf.plan={};
+    if(!D.pf.plan[mk])D.pf.plan[mk]={};
+    Object.assign(D.pf.plan[mk],upd);sv();
+  }
+
+  // ── Totais ────────────────────────────────────────────────────
+  var totalGasto=outs.reduce(function(s,t){return s+(t.amount||0)},0);
+  var totalRecebido=ins.reduce(function(s,t){return s+(t.amount||0)},0);
+  var totalPlanejado=Object.values(limts).reduce(function(s,v){return s+v},0);
+  var saldoMes=totalRecebido-totalGasto;
+  var saldoVsPlano=totalPlanejado>0?totalPlanejado-totalGasto:null;
+
+  // ── Hero Resumo ───────────────────────────────────────────────
+  var hero=ce("div");
+  hero.style.cssText="background:linear-gradient(135deg,#4A6741,#344d2e);border-radius:16px;padding:18px 16px;color:#fff;margin-bottom:12px";
+  hero.innerHTML="<div style='font-size:9px;letter-spacing:2px;opacity:.55;text-transform:uppercase;margin-bottom:4px'>PLANEJAMENTO — "+mk+"</div>"
+    +"<div style='font-family:Cormorant Garamond,serif;font-size:28px;font-weight:300;margin-bottom:2px'>"
+    +(totalPlanejado>0?R(totalPlanejado):R(totalGasto))+"</div>"
+    +"<div style='font-size:11px;opacity:.7;margin-bottom:12px'>"+(totalPlanejado>0?"planejado para gastar":"gasto até agora")+"</div>"
+    +"<div style='display:grid;grid-template-columns:repeat(3,1fr);gap:8px'>"
+    +"<div><div style='font-size:9px;opacity:.5;text-transform:uppercase;letter-spacing:1px'>GASTO</div>"
+    +"<div style='font-size:13px;font-weight:600;color:#fca5a5'>"+R(totalGasto)+"</div></div>"
+    +"<div><div style='font-size:9px;opacity:.5;text-transform:uppercase;letter-spacing:1px'>RECEBIDO</div>"
+    +"<div style='font-size:13px;font-weight:600;color:#86efac'>"+R(totalRecebido)+"</div></div>"
+    +"<div><div style='font-size:9px;opacity:.5;text-transform:uppercase;letter-spacing:1px'>SALDO</div>"
+    +"<div style='font-size:13px;font-weight:600;color:"+(saldoMes>=0?"#86efac":"#fca5a5")+"'>"+R(saldoMes)+"</div></div>"
+    +"</div>";
+  c.appendChild(hero);
+
+  // ── Card: Metas do mês ────────────────────────────────────────
+  var metaCard=ce("div","card");
+  var msh=ce("div","sh");msh.innerHTML="<div class='st'>🎯 Metas do mês</div>";metaCard.appendChild(msh);
+
+  // Receita prevista
+  var recRow=ce("div");recRow.style.cssText="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--bd)";
+  var recLeft=ce("div");
+  recLeft.innerHTML="<div style='font-size:12px;font-weight:600'>💰 Receita prevista</div>"
+    +"<div style='font-size:11px;color:#9ca3af'>quanto espero receber</div>";
+  var recRight=ce("div");recRight.style.cssText="display:flex;align-items:center;gap:8px";
+  var recInp=ce("input","plinp");recInp.type="number";recInp.placeholder="0,00";
+  recInp.value=recPrev||"";recInp.style.cssText="width:100px;text-align:right;border-color:#4A6741;color:#4A6741;background:#eaf0e8";
+  recInp.onblur=function(){savePlan({receitaPrevista:parseFloat(this.value)||0})};
+  recRight.appendChild(recInp);recRow.appendChild(recLeft);recRow.appendChild(recRight);metaCard.appendChild(recRow);
+
+  // Meta de poupança
+  var poupRow=ce("div");poupRow.style.cssText="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--bd)";
+  var poupLeft=ce("div");
+  var poupPct=recPrev>0?Math.round((metaPoup/recPrev)*100):0;
+  poupLeft.innerHTML="<div style='font-size:12px;font-weight:600'>🏦 Meta de poupança</div>"
+    +"<div style='font-size:11px;color:#9ca3af'>"+(recPrev>0?"equivale a "+poupPct+"% da receita prevista":"defina sua receita prevista primeiro")+"</div>";
+  var poupRight=ce("div");poupRight.style.cssText="display:flex;align-items:center;gap:8px";
+  var poupInp=ce("input","plinp");poupInp.type="number";poupInp.placeholder="0,00";
+  poupInp.value=metaPoup||"";poupInp.style.cssText="width:100px;text-align:right;border-color:#0284c7;color:#0284c7;background:#eff6ff";
+  poupInp.onblur=function(){savePlan({metaPoupanca:parseFloat(this.value)||0})};
+  poupRight.appendChild(poupInp);poupRow.appendChild(poupLeft);poupRow.appendChild(poupRight);metaCard.appendChild(poupRow);
+
+  // Resumo das metas
+  if(recPrev>0||metaPoup>0){
+    var metaSum=ce("div");metaSum.style.cssText="margin-top:10px;padding:10px;background:#f9fafb;border-radius:10px;font-size:11.5px";
+    var dispPrev=recPrev>0?recPrev-metaPoup:null;
+    var saldoRealVsMeta=recPrev>0?saldoMes-metaPoup:null;
+    metaSum.innerHTML=(recPrev>0?"<div style='display:flex;justify-content:space-between;margin-bottom:4px'><span>Receita prevista</span><span style='font-weight:600;color:#4A6741'>"+R(recPrev)+"</span></div>":"")
+      +(metaPoup>0?"<div style='display:flex;justify-content:space-between;margin-bottom:4px'><span>Meta de poupança</span><span style='font-weight:600;color:#0284c7'>"+R(metaPoup)+"</span></div>":"")
+      +(dispPrev!==null?"<div style='display:flex;justify-content:space-between;margin-bottom:4px;padding-top:4px;border-top:1px solid var(--bd)'><span>Disponível para gastar</span><span style='font-weight:700'>"+R(Math.max(0,dispPrev))+"</span></div>":"")
+      +(totalRecebido>0?"<div style='display:flex;justify-content:space-between;color:"+(saldoMes>=metaPoup?"#059669":"#dc2626")+"'><span>Saldo atual vs meta</span><span style='font-weight:700'>"+(saldoMes>=metaPoup?"✅ Meta atingível":"⚠️ "+R(metaPoup-saldoMes)+" abaixo")+"</span></div>":"");
+    metaCard.appendChild(metaSum);
+  }
+  c.appendChild(metaCard);
+
+  // ── Card: Limite por categoria (DESPESAS) ─────────────────────
+  var despCard=ce("div","card");
+  var dsh=ce("div","sh");
+  dsh.innerHTML="<div class='st'>💸 Limite de gastos por categoria</div>";
+  var addCatBtn=ce("button");addCatBtn.style.cssText="font-size:11px;color:#4A6741;background:none;border:none;cursor:pointer;font-weight:600;font-family:inherit";
+  addCatBtn.textContent="+ Categoria";addCatBtn.onclick=function(){gi("plan-add-row").style.display="flex"};
+  dsh.appendChild(addCatBtn);despCard.appendChild(dsh);
+
+  // Barra de progresso total
+  if(totalPlanejado>0){
+    var totBar=ce("div");totBar.style.cssText="margin-bottom:14px;padding:10px;background:#f9fafb;border-radius:10px";
+    var totPct=Math.min(totalGasto/totalPlanejado*100,100);
+    var totOver=totalGasto>totalPlanejado;
+    totBar.innerHTML="<div style='display:flex;justify-content:space-between;font-size:11.5px;font-weight:600;margin-bottom:6px'>"
+      +"<span>Total planejado</span>"
+      +"<span style='color:"+(totOver?"#dc2626":"#4A6741")+"'>"+R(totalGasto)+" / "+R(totalPlanejado)+"</span></div>";
+    totBar.appendChild(pb(totPct,totOver?"#dc2626":"#4A6741",6));
+    if(saldoVsPlano!==null){
+      var remTag=ce("div");remTag.style.cssText="font-size:11px;margin-top:6px;color:"+(totOver?"#dc2626":"#059669");
+      remTag.textContent=totOver?"⚠️ Orçamento estourou em "+R(totalGasto-totalPlanejado):"✅ "+R(saldoVsPlano)+" ainda disponível no orçamento";
+      totBar.appendChild(remTag);
+    }
+    despCard.appendChild(totBar);
+  }
+
   cats.forEach(function(cat,ci){
-    var sp=outs.filter(function(t){return(t.cat||t.category)===cat.n}).reduce(function(s,t){return s+t.amount},0);
-    var lim=(plan.limits||{})[cat.n]||0;var over=lim>0&&sp>lim;var pct=lim>0?(sp/lim)*100:0;
-    var rw=ce("div");rw.style.marginBottom="10px";
+    if(cat.n==="Investimento")return;
+    var sp=outs.filter(function(t){return(t.cat||t.category)===cat.n}).reduce(function(s,t){return s+(t.amount||0)},0);
+    var lim=limts[cat.n]||0;
+    var over=lim>0&&sp>lim;
+    var pct=lim>0?Math.min((sp/lim)*100,100):0;
+    var rw=ce("div");rw.style.cssText="margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--bd)";
     var head=ce("div","plh");
-    var left=ce("div","plcat");left.innerHTML="<span style='font-size:14px'>"+cat.i+"</span><div><div>"+cat.n+"</div>"+(lim>0?"<div style='font-size:10px;color:"+(over?"#dc2626":"#059669")+";font-weight:600'>"+(over?"Estourou "+R(sp-lim):R(lim-sp)+" livre")+"</div>":"")+"</div>";
-    var right=ce("div","plr");right.innerHTML="<div style='text-align:right;font-size:11px;font-weight:700;color:"+(over?"#dc2626":"#3D2B1F")+"'>"+R(sp)+(lim?"<span style='color:#9ca3af;font-weight:400'> / "+R(lim)+"</span>":"")+"</div>";
-    var inpW=ce("div","plw");var li=ce("input","plinp");li.type="number";li.placeholder="0";li.value=lim||"";li.style.borderColor=cat.c;li.style.color=cat.c;li.style.background=cat.c+"0a";
-    (function(cn){li.onblur=function(){if(!D.pf.plan)D.pf.plan={};if(!D.pf.plan[mk])D.pf.plan[mk]={};if(!D.pf.plan[mk].limits)D.pf.plan[mk].limits={};D.pf.plan[mk].limits[cn]=parseFloat(this.value)||0;sv()}})(cat.n);
+    var left=ce("div","plcat");
+    left.innerHTML="<span style='font-size:14px'>"+(cat.i||cat.icon||"📦")+"</span>"
+      +"<div><div style='font-size:12px;font-weight:600'>"+(cat.n||cat.name)+"</div>"
+      +(lim>0?"<div style='font-size:10px;color:"+(over?"#dc2626":"#059669")+";font-weight:600'>"
+        +(over?"Estourou "+R(sp-lim):R(lim-sp)+" livre")+"</div>":"<div style='font-size:10px;color:#9ca3af'>sem limite definido</div>")
+      +"</div>";
+    var right=ce("div","plr");
+    var spColor=over?"#dc2626":sp>0?"var(--tx)":"#9ca3af";
+    right.innerHTML="<div style='text-align:right;font-size:12px;font-weight:700;color:"+spColor+"'>"+R(sp)
+      +(lim?"<span style='color:#9ca3af;font-weight:400'> / "+R(lim)+"</span>":"")+"</div>";
+    var inpW=ce("div","plw");
+    var li=ce("input","plinp");li.type="number";li.placeholder="Limite";li.value=lim||"";
+    li.style.cssText="width:90px;text-align:right;border-color:"+(cat.c||"#4A6741")+";color:"+(cat.c||"#4A6741")+";background:"+(cat.c||"#4A6741")+"0a";
+    (function(cn){li.onblur=function(){
+      if(!D.pf.plan)D.pf.plan={};if(!D.pf.plan[mk])D.pf.plan[mk]={};
+      if(!D.pf.plan[mk].limits)D.pf.plan[mk].limits={};
+      D.pf.plan[mk].limits[cn]=parseFloat(this.value)||0;sv();nav("plan");
+    }})(cat.n);
     inpW.appendChild(li);right.appendChild(inpW);
-    var delB=ce("button");delB.style.cssText="background:none;border:none;cursor:pointer;color:#d1d5db;font-size:14px;padding:0 2px";delB.textContent="×";
+    var delB=ce("button");delB.style.cssText="background:none;border:none;cursor:pointer;color:#d1d5db;font-size:16px;padding:0 2px;margin-left:2px";delB.textContent="×";
     (function(idx2,cn){delB.onclick=function(){
-      if(cn==="Investimento"){alert("Categoria Investimento é fixa e não pode ser excluída.");return}
-      if(!D.pfOutCats||!D.pfOutCats.length)D.pfOutCats=DEF_OUT.map(function(c){return Object.assign({},c)});
-      D.pfOutCats.splice(idx2,1);sv();nav("plan")
+      if(cn==="Investimento"){alert("Categoria Investimento é fixa.");return}
+      if(!D.pfOutCats||!D.pfOutCats.length)D.pfOutCats=DEF_OUT.map(function(c2){return Object.assign({},c2)});
+      D.pfOutCats.splice(idx2,1);sv();nav("plan");
     }})(ci,cat.n);
     right.appendChild(delB);head.appendChild(left);head.appendChild(right);rw.appendChild(head);
-    if(lim>0)rw.appendChild(pb(pct,cat.c,4));card.appendChild(rw)
+    if(lim>0)rw.appendChild(pb(pct,over?"#dc2626":(cat.c||"#4A6741"),4));
+    if(sp>0&&!lim){
+      var noLimTag=ce("div");noLimTag.style.cssText="font-size:10.5px;color:#d97706;background:#fef3c7;border-radius:6px;padding:4px 8px;margin-top:4px";
+      noLimTag.textContent="💡 Defina um limite para esta categoria";noLimTag.onclick=function(){li.focus()};
+      rw.appendChild(noLimTag);
+    }
+    despCard.appendChild(rw);
   });
-  var ar=ce("div");ar.style.cssText="display:flex;gap:7px;margin-top:8px";
-  var icoI=ce("input","inp");icoI.placeholder="🎯";icoI.maxLength=2;icoI.id="pl-ico";icoI.style.cssText="width:42px;text-align:center;padding:8px";
+
+  // Linha de adicionar categoria
+  var addRow=ce("div");addRow.id="plan-add-row";addRow.style.cssText="display:none;gap:7px;margin-top:8px;align-items:center";
+  var icoI=ce("input","inp");icoI.placeholder="🎯";icoI.maxLength=2;icoI.id="pl-ico";icoI.style.cssText="width:42px;text-align:center;padding:8px;flex-shrink:0";
   var nmI=ce("input","inp");nmI.placeholder="Nova categoria...";nmI.id="pl-cnm";nmI.style.flex="1";
   var addB=ce("button","btn bpf");addB.textContent="+";addB.style.background="#4A6741";
   addB.onclick=function(){
     var n=gi("pl-cnm").value.trim();if(!n)return;
-    // Initialize from defaults if user hasn't customized yet
-    if(!D.pfOutCats||!D.pfOutCats.length)D.pfOutCats=DEF_OUT.map(function(c){return Object.assign({},c)});
+    if(!D.pfOutCats||!D.pfOutCats.length)D.pfOutCats=DEF_OUT.map(function(c2){return Object.assign({},c2)});
     D.pfOutCats.push({n:n,i:gi("pl-ico").value||"📦",c:"#94a3b8"});
     gi("pl-cnm").value="";gi("pl-ico").value="";
-    sv();nav("plan")
+    sv();nav("plan");
   };
   nmI.onkeydown=function(e){if(e.key==="Enter")addB.onclick()};
-  ar.appendChild(icoI);ar.appendChild(nmI);ar.appendChild(addB);card.appendChild(ar);c.appendChild(card)
+  addRow.appendChild(icoI);addRow.appendChild(nmI);addRow.appendChild(addB);despCard.appendChild(addRow);
+  c.appendChild(despCard);
+
+  // ── Card: Receita por categoria ───────────────────────────────
+  var recCard=ce("div","card");
+  var rsh=ce("div","sh");rsh.innerHTML="<div class='st'>💰 Receita por categoria</div>";recCard.appendChild(rsh);
+
+  inCats.forEach(function(cat){
+    var catName=cat.n||cat.name;
+    var sp=ins.filter(function(t){return(t.cat||t.category)===catName}).reduce(function(s,t){return s+(t.amount||0)},0);
+    var lim=inLimts[catName]||0;
+    var pct=lim>0?Math.min((sp/lim)*100,100):0;
+    var rw=ce("div");rw.style.cssText="margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--bd)";
+    var head=ce("div","plh");
+    var left=ce("div","plcat");
+    left.innerHTML="<span style='font-size:14px'>"+(cat.i||cat.icon||"💰")+"</span>"
+      +"<div><div style='font-size:12px;font-weight:600'>"+catName+"</div>"
+      +(lim>0?"<div style='font-size:10px;color:#059669;font-weight:600'>"+(sp>=lim?"✅ Meta atingida":R(lim-sp)+" faltando")+"</div>":"<div style='font-size:10px;color:#9ca3af'>sem meta definida</div>")
+      +"</div>";
+    var right=ce("div","plr");
+    right.innerHTML="<div style='text-align:right;font-size:12px;font-weight:700;color:"+(sp>0?"#059669":"#9ca3af")+"'>"+R(sp)
+      +(lim?"<span style='color:#9ca3af;font-weight:400'> / "+R(lim)+"</span>":"")+"</div>";
+    var inpW=ce("div","plw");
+    var li=ce("input","plinp");li.type="number";li.placeholder="Meta";li.value=lim||"";
+    li.style.cssText="width:90px;text-align:right;border-color:#4A6741;color:#4A6741;background:#eaf0e8";
+    (function(cn){li.onblur=function(){
+      if(!D.pf.plan)D.pf.plan={};if(!D.pf.plan[mk])D.pf.plan[mk]={};
+      if(!D.pf.plan[mk].inLimits)D.pf.plan[mk].inLimits={};
+      D.pf.plan[mk].inLimits[cn]=parseFloat(this.value)||0;sv();
+    }})(catName);
+    inpW.appendChild(li);right.appendChild(inpW);
+    head.appendChild(left);head.appendChild(right);rw.appendChild(head);
+    if(lim>0)rw.appendChild(pb(pct,"#059669",4));
+    recCard.appendChild(rw);
+  });
+
+  if(!inCats.length){
+    var emR=ce("div");emR.style.cssText="text-align:center;padding:16px;color:#9ca3af;font-size:12px";
+    emR.textContent="Nenhuma categoria de receita cadastrada.";recCard.appendChild(emR);
+  }
+  c.appendChild(recCard);
+
+  // ── Card: Diagnóstico ─────────────────────────────────────────
+  var diags=[];
+  if(recPrev>0&&totalGasto>recPrev)diags.push({cor:"#dc2626",ic:"🚨",txt:"Seus gastos ("+R(totalGasto)+") superam a receita prevista ("+R(recPrev)+"). Revise os limites."});
+  if(metaPoup>0&&saldoMes<metaPoup)diags.push({cor:"#d97706",ic:"⚠️",txt:"Saldo atual ("+R(saldoMes)+") está abaixo da meta de poupança ("+R(metaPoup)+")."});
+  var catsSemLimite=cats.filter(function(cat){return cat.n!=="Investimento"&&!(limts[cat.n])}).length;
+  if(catsSemLimite>0)diags.push({cor:"#0284c7",ic:"💡",txt:catsSemLimite+" categoria"+(catsSemLimite>1?"s":"")+" sem limite definido. Defina para controle completo."});
+  if(totalPlanejado>0&&totalPlanejado<totalGasto)diags.push({cor:"#dc2626",ic:"⚠️",txt:"Orçamento total estourado em "+R(totalGasto-totalPlanejado)+"."});
+  if(recPrev>0&&metaPoup>0&&saldoMes>=metaPoup&&totalRecebido>0)diags.push({cor:"#059669",ic:"✅",txt:"Parabéns! Você está dentro do plano e no caminho certo para poupar "+R(metaPoup)+"."});
+
+  if(diags.length){
+    var diagCard=ce("div","card");
+    var dgsh=ce("div","sh");dgsh.innerHTML="<div class='st'>💬 Diagnóstico do mês</div>";diagCard.appendChild(dgsh);
+    diags.forEach(function(d){
+      var dw=ce("div");dw.style.cssText="display:flex;gap:10px;padding:10px;border-radius:10px;background:"+d.cor+"11;margin-bottom:8px;border:1px solid "+d.cor+"33";
+      dw.innerHTML="<span style='font-size:18px;flex-shrink:0'>"+d.ic+"</span><span style='font-size:12px;color:var(--tx);line-height:1.5'>"+d.txt+"</span>";
+      diagCard.appendChild(dw);
+    });
+    c.appendChild(diagCard);
+  }
 }
+
 
 function rContas(c){
   var accs=(D.accounts||[]).filter(function(a){return a.ctx===panel||a.ctx==="both"});
