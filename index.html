@@ -3980,43 +3980,24 @@ function rPJDash(c,mk){
   // ── BLOCO 5: DESPESAS ────────────────────────────────────────
 
 
-  // ── BLOCO 6: CRESCIMENTO ─────────────────────────────────────
+  // ── BLOCO 6: CRESCIMENTO (inicialização) ─────────────────────
   sectionBorderCol="#c5d9c2";
   var growWrap=ce("div");growWrap.style.cssText="background:linear-gradient(135deg,#faf5ff,#fff);border:1.5px solid #c5d9c2;border-radius:16px;padding:14px;margin-bottom:12px";
   var growHdr=ce("div");growHdr.style.cssText="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;padding:0 0 10px;display:flex;align-items:center;gap:7px;border-bottom:1px solid #c5d9c244;margin-bottom:14px;color:#4A6741";
   growHdr.innerHTML="<span style='font-size:16px'>📈</span>CRESCIMENTO";growWrap.appendChild(growHdr);
-  var hist3=[];for(var gi2=5;gi2>=0;gi2--){var hM3=moN-gi2;var hY3=yrN;while(hM3<0){hM3+=12;hY3--}var hMK3=hY3+"-"+String(hM3+1).padStart(2,"0");var hF3=(D.pj.transactions||[]).filter(function(t){return t.date&&t.date.startsWith(hMK3)&&!t.pending&&t.type==="entrada"}).reduce(function(s,t){return s+t.amount},0);var hCl=(D.pj.transactions||[]).filter(function(t){return t.date&&t.date.startsWith(hMK3)&&!t.pending&&t.type==="entrada"}).reduce(function(s,t){return s+(t.clients||1)},0);hist3.push({mk:hMK3,fat:hF3,cli:hCl,label:MF[hM3].slice(0,3)})}
+  var hist3=[];for(var gi2=5;gi2>=0;gi2--){var hM3=moN-gi2;var hY3=yrN;while(hM3<0){hM3+=12;hY3--}var hMK3=hY3+"-"+String(hM3+1).padStart(2,"0");var hRec3=(D.pj.transactions||[]).filter(function(t){return t.date&&t.date.startsWith(hMK3)&&t.type==="entrada"&&!t.pending});var hF3=hRec3.reduce(function(s,t){return s+t.amount},0);var hCl3=hRec3.reduce(function(s,t){return s+(t.clients||1)},0);var hCl=hCl3;hist3.push({mk:hMK3,fat:hF3,cli:hCl,label:MF[hM3].slice(0,3)});}
   var maxHF=Math.max.apply(null,hist3.map(function(h){return h.fat}))||1;
-  var chartCard2=ce("div");chartCard2.style.cssText="background:#fff;border:1px solid #c5d9c2;border-radius:12px;padding:16px;margin-bottom:8px";
-  var chartH=ce("div");chartH.style.cssText="font-size:11px;font-weight:600;color:#4A6741;margin-bottom:14px";chartH.textContent="Faturamento — últimos 6 meses";chartCard2.appendChild(chartH);
+  var chartCard2=ce("div");chartCard2.style.cssText="background:#fff;border:1px solid #c5d9c2;border-radius:10px;padding:12px;margin-top:10px";
+  var chartH=ce("div");chartH.style.cssText="font-size:11px;font-weight:600;color:#4A6741;margin-bottom:8px";chartH.textContent="Faturamento — últimos 6 meses";chartCard2.appendChild(chartH);
   var barChart=ce("div");barChart.style.cssText="display:flex;align-items:flex-end;gap:6px;height:80px";
   hist3.forEach(function(h){
     var isCur=h.mk===mk;var barH=maxHF>0?Math.round(h.fat/maxHF*70):2;
     var col2=ce("div");col2.style.cssText="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px";
-    var bar=ce("div");bar.style.cssText="width:100%;height:"+Math.max(barH,2)+"px;background:"+(isCur?"#4A6741":"#c5d9c2")+";border-radius:4px 4px 0 0";
+    var bar=ce("div");bar.style.cssText="width:100%;height:"+Math.max(barH,2)+"px;background:"+(isCur?"#4A6741":"#c5d9c2")+";border-radius:3px 3px 0 0;transition:.3s";
     var lbl2=ce("div");lbl2.style.cssText="font-size:9px;color:"+(isCur?"#4A6741":"#9ca3af")+";font-weight:"+(isCur?"700":"400");lbl2.textContent=h.label;
-    var val2=ce("div");val2.style.cssText="font-size:9px;color:#9ca3af;text-align:center";val2.textContent=h.fat?R(h.fat).replace("R$",""):"—";
+    var val2=ce("div");val2.style.cssText="font-size:9px;color:#9ca3af;text-align:center";val2.textContent=h.fat>0?R(h.fat).replace("R$ ",""):"—";
     col2.appendChild(bar);col2.appendChild(lbl2);col2.appendChild(val2);barChart.appendChild(col2)
-  });chartCard2.appendChild(barChart);growWrap.appendChild(chartCard2);
-  c.appendChild(growWrap);
-
-  // ── BLOCO 7: RESERVAS E INVESTIMENTOS ────────────────────────
-  sectionBorderCol="#a7f3d0";
-  var invWrap=ce("div");invWrap.style.cssText="background:linear-gradient(135deg,#ecfdf5,#fff);border:1.5px solid #6ee7b7;border-radius:16px;padding:14px;margin-bottom:12px";
-  var invHdr=ce("div");invHdr.style.cssText="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;padding:0 0 10px;display:flex;align-items:center;gap:7px;border-bottom:1px solid #6ee7b744;margin-bottom:14px;color:#065f46";
-  invHdr.innerHTML="<span style='font-size:16px'>🏦</span>RESERVAS E INVESTIMENTOS";invWrap.appendChild(invHdr);
-  var reservaObj=(D.pjObjectives||[]).find(function(o){return(o.name||"").toLowerCase().includes("reserva")||o.isReserva});
-  var reservaMeses=reservaObj&&tD>0?Math.round((reservaObj.saved||0)/tD*10)/10:0;
-  var fatInvPct=fat>0?invTotal/fat*100:0;
-  var invM3=0;var invM6=0;
-  for(var iw=0;iw<3;iw++){var iwM=moN-iw;var iwY=yrN;while(iwM<0){iwM+=12;iwY--}var iwK=iwY+"-"+String(iwM+1).padStart(2,"0");invM3+=(D.pjInvestments||[]).filter(function(i){return i.date&&i.date.startsWith(iwK)&&i.movType==="aporte"}).reduce(function(s,i){return s+i.amount},0)}
-  invWrap.appendChild(kpiGrid([
-    kpiCard({l:"Total Investido",v:R(invTotal),s:"patrimônio PJ",col:"#065f46",tip:"Soma de todos os aportes menos resgates."}),
-    kpiCard({l:"Reserva Emergência",v:reservaObj?R(reservaObj.saved||0):"—",s:reservaMeses?reservaMeses+" meses cobertos":"configure objetivo de reserva",col:reservaMeses>=3?"#059669":reservaMeses>=1?"#f59e0b":"#9ca3af",bar:reservaMeses?reservaMeses/6*100:0,tip:"Meta recomendada: 3 a 6 meses de despesas guardados."}),
-    kpiCard({l:"% Fat. Investido",v:fat?fatInvPct.toFixed(1)+"%":"—",s:fatInvPct>=10?"✓ Acima de 10%":"Meta: 10% do fat.",col:fatInvPct>=10?"#059669":"#f59e0b",tip:"% do faturamento sendo investido. Meta: pelo menos 10% todo mês."}),
-    kpiCard({l:"Aportes 3 Meses",v:invM3>0?R(invM3):"—",s:"últimos 3 meses",col:"#065f46",tip:"Total de aportes realizados nos últimos 3 meses. Indica consistência nos investimentos."})
-  ]));
-  c.appendChild(invWrap);
+  });chartCard2.appendChild(barChart);
 
   // ── BLOCO 8: ANÁLISE POR SERVIÇO ─────────────────────────────
   var svcCats4=D.inCats.filter(function(c2){return c2.isService});
