@@ -3704,7 +3704,16 @@ function rPJDash(c,mk){
   var recurrentIds=new Set();
   rec.forEach(function(t){if(t.clientId&&!t.isFirstTime)recurrentIds.add(String(t.clientId))});
   var recurrentCount=recurrentIds.size;
-  var churnCount=allClients.filter(function(cl){if(!cl.lastVisit)return false;return(new Date()-new Date(cl.lastVisit))/86400000>60}).length;
+  var churnCount=allClients.filter(function(cl){
+    // Usar lastVisit se disponível
+    if(cl.lastVisit) return (new Date()-new Date(cl.lastVisit))/86400000>60;
+    // Fallback: buscar última transação de receita vinculada a esta cliente
+    var lastTx=(D.pj.transactions||[]).filter(function(t){
+      return t.type==="entrada"&&String(t.clientId)===String(cl.id)&&t.date;
+    }).sort(function(a,b){return new Date(b.date)-new Date(a.date)})[0];
+    if(!lastTx) return false; // sem histórico = não conta como inativa
+    return (new Date()-new Date(lastTx.date))/86400000>60;
+  }).length;
   var retentionRate=cli>0?Math.round(recurrentCount/cli*100):0;
   var ltv=allClients.length>0?Math.round(allClients.reduce(function(s,cl){return s+(cl.ltv||0)},0)/allClients.length):0;
   // Duration
@@ -3887,9 +3896,25 @@ function rPJDash(c,mk){
   var tt=ce("div","mt");tt.innerHTML="⚠️ Clientes Inativas <span style='font-size:13px;font-weight:400;color:#9ca3af'>(+60 dias)</span>";bd2.appendChild(tt);
   // Filtrar inativas com dados completos
   var inact=allClients.filter(function(cl){
-    if(!cl.lastVisit)return false;
-    return(new Date()-new Date(cl.lastVisit))/86400000>60;
-  }).sort(function(a,b){return new Date(a.lastVisit)-new Date(b.lastVisit)});
+    var refDate=cl.lastVisit;
+    if(!refDate){
+      var lastTx=(D.pj.transactions||[]).filter(function(t){
+        return t.type==="entrada"&&String(t.clientId)===String(cl.id)&&t.date;
+      }).sort(function(a,b){return new Date(b.date)-new Date(a.date)})[0];
+      if(!lastTx)return false;
+      refDate=lastTx.date;
+    }
+    return(new Date()-new Date(refDate))/86400000>60;
+  }).map(function(cl){
+    // Garantir que cl tem refDate para ordenação e exibição
+    if(!cl.lastVisit){
+      var lastTx2=(D.pj.transactions||[]).filter(function(t){
+        return t.type==="entrada"&&String(t.clientId)===String(cl.id)&&t.date;
+      }).sort(function(a,b){return new Date(b.date)-new Date(a.date)})[0];
+      return Object.assign({},cl,{_refDate:lastTx2?lastTx2.date:null});
+    }
+    return Object.assign({},cl,{_refDate:cl.lastVisit});
+  }).sort(function(a,b){return new Date(a._refDate)-new Date(b._refDate)});
   if(!inact.length){
     var em=ce("div");em.style.cssText="padding:20px;text-align:center;color:#9ca3af;font-size:13px";
     em.textContent="Nenhuma cliente está há mais de 60 dias sem atendimento.";bd2.appendChild(em);
@@ -3897,7 +3922,7 @@ function rPJDash(c,mk){
     var sub=ce("div");sub.style.cssText="font-size:12px;color:#9ca3af;padding:0 0 12px;border-bottom:1px solid var(--bd);margin-bottom:12px";
     sub.textContent=inact.length+" cliente"+(inact.length>1?"s":"")+" precisam de reengajamento";bd2.appendChild(sub);
     inact.forEach(function(cl,idx){
-      var days=Math.round((new Date()-new Date(cl.lastVisit))/86400000);
+      var days=Math.round((new Date()-new Date(cl._refDate))/86400000);
       // Buscar último atendimento concluído
       var ultAtend=(D.agenda||[]).filter(function(a){
         return String(a.clientId)===String(cl.id)&&a.status==="concluido";
@@ -3912,7 +3937,7 @@ function rPJDash(c,mk){
       var badge=ce("div");badge.style.cssText="background:#fee2e2;color:#dc2626;border-radius:20px;padding:3px 10px;font-size:11px;font-weight:700;white-space:nowrap";
       badge.textContent=days+" dias";header.appendChild(badge);card.appendChild(header);
       var details=ce("div");details.style.cssText="font-size:11px;color:#6b7280;display:grid;grid-template-columns:1fr 1fr;gap:4px";
-      var lastDateStr=cl.lastVisit?new Date(cl.lastVisit).toLocaleDateString("pt-BR"):"—";
+      var lastDateStr=cl._refDate?new Date(cl._refDate).toLocaleDateString("pt-BR"):"—";
       details.innerHTML="<div>📅 Último atend.: <b style='color:var(--tx)'>"+lastDateStr+"</b></div>"
         +(ultAtend?"<div>✂️ Serviço: <b style='color:var(--tx)'>"+ultAtend.service+"</b></div>":"<div>✂️ Serviço: <b>—</b></div>")
         +(ultAtend&&ultAtend.value?"<div>💰 Valor: <b style='color:#059669'>"+R(ultAtend.value)+"</b></div>":"<div>💰 Valor: <b>—</b></div>")
@@ -3999,48 +4024,6 @@ function rPJDash(c,mk){
     col2.appendChild(bar);col2.appendChild(lbl2);col2.appendChild(val2);barChart.appendChild(col2)
   });chartCard2.appendChild(barChart);
 
-  // ── BLOCO 8: ANÁLISE POR SERVIÇO ─────────────────────────────
-  var svcCats4=D.inCats.filter(function(c2){return c2.isService});
-  if(!svcCats4.length)svcCats4=D.services?D.services.map(function(s){return{name:s.name,icon:s.icon}}):[];
-  if(svcCats4.length){
-    sectionBorderCol="#fde68a";
-    var svcWrap=ce("div");svcWrap.style.cssText="background:linear-gradient(135deg,#fffbeb,#fff);border:1.5px solid #fde68a;border-radius:16px;padding:14px;margin-bottom:12px";
-    var svcHdr=ce("div");svcHdr.style.cssText="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;padding:0 0 10px;display:flex;align-items:center;gap:7px;border-bottom:1px solid #fde68a44;margin-bottom:14px;color:#b45309";
-    svcHdr.innerHTML="<span style='font-size:16px'>🎯</span>ANÁLISE POR SERVIÇO";svcWrap.appendChild(svcHdr);
-    var allSvcData=svcCats4.map(function(cat){
-      var catName=cat.name||cat.n||"";
-      var svR=rec.filter(function(t){return(t.cat||t.category)===catName});
-      var svD=desp.filter(function(t){return(t.cat||t.category)===catName});
-      var svF=svR.reduce(function(s,t){return s+t.amount},0);
-      var svDT=svD.reduce(function(s,t){return s+t.amount},0);
-      var svC=svR.reduce(function(s,t){return s+(t.clients||1)},0);
-      var svT=svC>0?svF/svC:0;
-      var svL=svF-svDT;
-      var svM=svF>0?svL/svF*100:0;
-      var pmSvR=pmRec.filter(function(t){return(t.cat||t.category)===catName});
-      var pmSvF=pmSvR.reduce(function(s,t){return s+t.amount},0);
-      var svG=pmSvF>0?(svF-pmSvF)/pmSvF*100:0;
-      var svRec2=new Set(svR.filter(function(t){return t.clientId&&!t.isFirstTime}).map(function(t){return String(t.clientId)}));
-      return{name:catName,icon:cat.icon||cat.i||"",fat:svF,cli:svC,ticket:svT,lucro:svL,margem:svM,growth:svG,recRate:svC>0?Math.round(svRec2.size/svC*100):0,pmFat:pmSvF}
-    }).sort(function(a,b){return b.fat-a.fat});
-    var svcHdrRow=ce("div");svcHdrRow.style.cssText="display:grid;grid-template-columns:1fr 55px 40px 50px 50px 40px 35px;gap:2px;padding:5px 6px;background:#fffbeb;border-radius:8px;margin-bottom:4px;font-size:7.5px;font-weight:700;color:#b45309;letter-spacing:.3px;text-transform:uppercase;min-width:0;overflow:hidden;width:100%";
-    svcHdrRow.innerHTML="<span>SERVIÇO</span><span style='text-align:right'>FAT.</span><span style='text-align:right'>ATEND.</span><span style='text-align:right'>TICKET</span><span style='text-align:right'>LUCRO</span><span style='text-align:right'>CRESC.</span><span style='text-align:right'>REC.%</span>";
-    svcWrap.appendChild(svcHdrRow);
-    allSvcData.forEach(function(sv,i){
-      if(!sv.fat&&!sv.cli)return;
-      var row=ce("div");row.style.cssText="display:grid;grid-template-columns:1fr 55px 40px 50px 50px 40px 35px;gap:2px;padding:5px 6px;border-radius:8px;margin-bottom:2px;min-width:0;overflow:hidden;width:100%;background:"+(i%2===0?"#fff":"#fffbeb");
-      var gCol=sv.growth>=5?"#059669":sv.growth<-5?"#dc2626":"#f59e0b";
-      row.innerHTML="<div style='display:flex;align-items:center;gap:6px;font-size:12px'><span>"+sv.icon+"</span><span>"+sv.name+"</span></div>"
-        +"<div style='text-align:right;font-size:11px;color:#059669'>"+R(sv.fat)+"</div>"
-        +"<div style='text-align:right;font-size:11px'>"+sv.cli+"</div>"
-        +"<div style='text-align:right;font-size:11px'>"+R(sv.ticket)+"</div>"
-        +"<div style='text-align:right;font-size:11px;color:"+(sv.lucro>=0?"#059669":"#dc2626")+"'>"+R(sv.lucro)+"</div>"
-        +"<div style='text-align:right;font-size:11px;color:"+gCol+"'>"+(sv.pmFat?(sv.growth>0?"+":"")+sv.growth.toFixed(0)+"%":"—")+"</div>"
-        +"<div style='text-align:right;font-size:11px'>"+sv.recRate+"%</div>";
-      svcWrap.appendChild(row)
-    });
-    c.appendChild(svcWrap)
-  }
   // Growth metrics
   var bestMonth=hist3.reduce(function(b,h){return h.fat>b.fat?h:b},{fat:0,label:"—"});
   var pmTk=pmCli>0?pmFat/pmCli:0;
