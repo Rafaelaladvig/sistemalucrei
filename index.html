@@ -231,6 +231,23 @@ button,input,select,textarea{font-family:inherit;font-size:14px}
 .su{animation:slideUp .2s ease}
 
 /* ── Luna FAB button (mobile only) ── */
+#add-fab{
+  display:none;
+  position:fixed;
+  bottom:calc(var(--bn-h) + env(safe-area-inset-bottom) + 62px);
+  right:12px;
+  width:42px;height:42px;
+  border-radius:50%;
+  background:linear-gradient(135deg,#4A6741,#6B8F62);
+  border:none;
+  color:#fff;font-size:24px;font-weight:300;
+  cursor:pointer;
+  z-index:101;
+  align-items:center;justify-content:center;
+  box-shadow:0 4px 14px rgba(74,103,65,.4);
+  line-height:1;
+}
+@media(max-width:768px){#add-fab{display:flex}}
 #luna-fab{
   display:none;
   position:fixed;
@@ -3705,13 +3722,18 @@ function rPJDash(c,mk){
   rec.forEach(function(t){if(t.clientId&&!t.isFirstTime)recurrentIds.add(String(t.clientId))});
   var recurrentCount=recurrentIds.size;
   var churnCount=allClients.filter(function(cl){
-    // Usar lastVisit se disponível
+    // 1. Usar lastVisit se disponível
     if(cl.lastVisit) return (new Date()-new Date(cl.lastVisit))/86400000>60;
-    // Fallback: buscar última transação de receita vinculada a esta cliente
+    // 2. Buscar último atendimento concluído na agenda
+    var lastAgenda=(D.agenda||[]).filter(function(a){
+      return String(a.clientId)===String(cl.id)&&a.status==="concluido"&&(a.completedAt||a.date);
+    }).sort(function(a,b){return new Date(b.completedAt||b.date)-new Date(a.completedAt||a.date)})[0];
+    if(lastAgenda) return (new Date()-new Date(lastAgenda.completedAt||lastAgenda.date))/86400000>60;
+    // 3. Buscar última transação de receita vinculada
     var lastTx=(D.pj.transactions||[]).filter(function(t){
       return t.type==="entrada"&&String(t.clientId)===String(cl.id)&&t.date;
     }).sort(function(a,b){return new Date(b.date)-new Date(a.date)})[0];
-    if(!lastTx) return false; // sem histórico = não conta como inativa
+    if(!lastTx) return false;
     return (new Date()-new Date(lastTx.date))/86400000>60;
   }).length;
   var retentionRate=cli>0?Math.round(recurrentCount/cli*100):0;
@@ -3898,6 +3920,12 @@ function rPJDash(c,mk){
   var inact=allClients.filter(function(cl){
     var refDate=cl.lastVisit;
     if(!refDate){
+      var lastAgenda=(D.agenda||[]).filter(function(a){
+        return String(a.clientId)===String(cl.id)&&a.status==="concluido"&&(a.completedAt||a.date);
+      }).sort(function(a,b){return new Date(b.completedAt||b.date)-new Date(a.completedAt||a.date)})[0];
+      if(lastAgenda)refDate=lastAgenda.completedAt||lastAgenda.date;
+    }
+    if(!refDate){
       var lastTx=(D.pj.transactions||[]).filter(function(t){
         return t.type==="entrada"&&String(t.clientId)===String(cl.id)&&t.date;
       }).sort(function(a,b){return new Date(b.date)-new Date(a.date)})[0];
@@ -3906,14 +3934,16 @@ function rPJDash(c,mk){
     }
     return(new Date()-new Date(refDate))/86400000>60;
   }).map(function(cl){
-    // Garantir que cl tem refDate para ordenação e exibição
-    if(!cl.lastVisit){
-      var lastTx2=(D.pj.transactions||[]).filter(function(t){
-        return t.type==="entrada"&&String(t.clientId)===String(cl.id)&&t.date;
-      }).sort(function(a,b){return new Date(b.date)-new Date(a.date)})[0];
-      return Object.assign({},cl,{_refDate:lastTx2?lastTx2.date:null});
+    var ref=cl.lastVisit;
+    if(!ref){
+      var la=(D.agenda||[]).filter(function(a){return String(a.clientId)===String(cl.id)&&a.status==="concluido"}).sort(function(a,b){return new Date(b.completedAt||b.date)-new Date(a.completedAt||a.date)})[0];
+      if(la)ref=la.completedAt||la.date;
     }
-    return Object.assign({},cl,{_refDate:cl.lastVisit});
+    if(!ref){
+      var lt=(D.pj.transactions||[]).filter(function(t){return t.type==="entrada"&&String(t.clientId)===String(cl.id)&&t.date}).sort(function(a,b){return new Date(b.date)-new Date(a.date)})[0];
+      if(lt)ref=lt.date;
+    }
+    return Object.assign({},cl,{_refDate:ref||null});
   }).sort(function(a,b){return new Date(a._refDate)-new Date(b._refDate)});
   if(!inact.length){
     var em=ce("div");em.style.cssText="padding:20px;text-align:center;color:#9ca3af;font-size:13px";
