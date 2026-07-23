@@ -1124,7 +1124,6 @@ var PF_TABS=[
   {id:"pfcalend",ic:"📅",l:"Calendário"},
   {id:"invest",ic:"📈",l:"Investimentos"},
   {id:"luna",ic:"✨",l:"Luna IA"},
-  {id:"metas",ic:"🎯",l:"Metas"},
   {id:"plan",ic:"📋",l:"Planejamento"},
   {id:"cartoes",ic:"💳",l:"Cartões"},
   {id:"hist",ic:"📋",l:"Histórico"},
@@ -1673,6 +1672,25 @@ function rDash(c,mk){
     catCard.innerHTML+="<div style='text-align:center;padding:16px;color:#9ca3af;font-size:12px'>Nenhum gasto registrado ✨</div>"
   }
 
+  // Receita por categoria (mesmo padrão visual do catCard)
+  var recCard=ce("div","card");
+  recCard.innerHTML="<div class='sh'><div class='st'>Receita por categoria</div></div>";
+  var recData=inCats.filter(function(cat){return cat.n!=="Investimento"}).map(function(cat){
+    return{cat:cat,sp:txs.filter(function(t){return t.type==="entrada"&&(t.cat||t.category)===cat.n}).reduce(function(s,t){return s+t.amount},0)}
+  }).filter(function(x){return x.sp>0}).sort(function(a,b){return b.sp-a.sp});
+  if(recData.length){
+    recData.forEach(function(item){
+      var rw=ce("div");rw.style.marginBottom="8px";
+      rw.innerHTML="<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:3px'>"
+        +"<div style='display:flex;align-items:center;gap:6px'><span>"+item.cat.i+"</span><span style='font-size:12px;font-weight:500'>"+item.cat.n+"</span></div>"
+        +"<span style='font-size:12px;font-weight:700'>"+R(item.sp)+"</span></div>";
+      rw.appendChild(pb(ins>0?(item.sp/ins)*100:0,item.cat.c||"#059669"));
+      recCard.appendChild(rw)
+    })
+  }else{
+    recCard.innerHTML+="<div style='text-align:center;padding:16px;color:#9ca3af;font-size:12px'>Nenhuma receita registrada neste período. ✨</div>"
+  }
+
   // Objetivos
   var objCard=ce("div","card");
   var objSh=ce("div","sh");objSh.innerHTML="<div class='st'>Objetivos financeiros</div>";
@@ -1719,8 +1737,7 @@ function rDash(c,mk){
       bW2.appendChild(bF2);rw2.appendChild(bW2);cardCatCard2.appendChild(rw2)
     })
   }
-  var row1=ce("div","g2");row1.appendChild(catCard);
-  if(cardCatCard2)row1.appendChild(cardCatCard2);else row1.appendChild(objCard);
+  var row1=ce("div","g2");row1.appendChild(catCard);row1.appendChild(recCard);
   c.appendChild(row1);
 
   // ── Row 2: Objetivos | Planejar ────────────────────────────
@@ -1748,9 +1765,7 @@ function rDash(c,mk){
   }else{
     var emPl=ce("div");emPl.style.cssText="text-align:center;padding:12px;color:#9ca3af;font-size:12px";emPl.textContent="Configure limites em Planejar";planCard2.appendChild(emPl)
   }
-  var row2=ce("div","g2");
-  if(cardCatCard2){row2.appendChild(objCard);row2.appendChild(planCard2)}
-  else row2.appendChild(planCard2);
+  var row2=ce("div","g2");row2.appendChild(planCard2);row2.appendChild(objCard);
   c.appendChild(row2);
 
   // Full history below
@@ -3027,21 +3042,13 @@ async function lunaMsg(p,text,sys,container,AC){
   var tb=ce("div","lbub");tb.innerHTML="<span class='dot' style='background:"+AC+"'></span><span class='dot' style='background:"+AC+"'></span><span class='dot' style='background:"+AC+"'></span>";typ.appendChild(tb);
   container.appendChild(typ);container.scrollTop=container.scrollHeight;
   var msgs=lmsgs[p].map(function(m){return{role:m.r==="u"?"user":"assistant",content:m.c}});
-  var token=ls_get("lc-api-token")||"";
-  var email=ls_get("lc-api-email")||"";
-  fetch(API_URL+"/api/luna",{
-    method:"POST",
-    headers:{"Content-Type":"application/json","x-session-token":token,"x-session-email":email},
-    body:JSON.stringify({messages:msgs,system:sys})
-  })
-  .then(function(r){return r.json()})
-  .then(function(j){
+  apiCall("/api/luna",{method:"POST",body:{messages:msgs,system:sys}}).then(function(res){
     typ.remove();
-    var raw=(j.ok&&j.text)?j.text:"Desculpe, tente novamente! 💙";
+    var raw=(res.ok&&res.data&&res.data.text)?res.data.text:"Desculpe, tente novamente! 💙";
+    if(!res.ok&&res.status===401){raw="Sessão expirada. Faça logout e entre novamente. 💙";}
     var am={r:"a",c:raw};lmsgs[p].push(am);container.appendChild(mkMsg(am,AC));
     container.scrollTop=container.scrollHeight;
-  })
-  .catch(function(e){
+  }).catch(function(){
     typ.remove();
     var em={r:"a",c:"Hmm, problema de conexão. 💙"};
     lmsgs[p].push(em);container.appendChild(mkMsg(em,AC));
