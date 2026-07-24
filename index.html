@@ -2393,11 +2393,9 @@ function rInvest(c){
     emCard.innerHTML="<div style='text-align:center;padding:32px 16px'>"
       +"<div style='font-size:32px;margin-bottom:12px'>📈</div>"
       +"<div style='font-size:14px;font-weight:600;color:var(--tx);margin-bottom:8px'>Você ainda não cadastrou nenhum investimento.</div>"
-      +"<div style='font-size:12px;color:#9ca3af;margin-bottom:16px'>Registre seus investimentos para acompanhar sua carteira.</div>"
+      +"<div style='font-size:12px;color:#9ca3af'>Clique em + Investimento para começar.</div>"
       +"</div>";
-    var addBtn2=ce("button","btn bpf");addBtn2.style="width:calc(100% - 32px);margin:0 16px 16px";
-    addBtn2.textContent="Cadastrar primeiro investimento";addBtn2.onclick=function(){oAddInvestimento()};
-    emCard.appendChild(addBtn2);c.appendChild(emCard);
+    c.appendChild(emCard);
   } else if(filtered.length){
     filtered.forEach(function(inv,fi){
       var realIdx=invs.indexOf(inv);
@@ -6589,66 +6587,324 @@ function rAtend(c){
 
 // ═══ PJ INVESTMENTS ══════════════════════════════════════════════════════════
 function rInvestPJ(c){
-  // Same as rInvest but uses D.pjInvestments and D.pjObjectives
-  var invs=D.pjInvestments||[];var objs=D.pjObjectives||[];
-  var total=totalInvested(true);
-  var rend=invs.filter(function(i){return i.movType==="rendimento"}).reduce(function(s,i){return s+i.amount},0);
-  var apt=invs.filter(function(i){return i.movType==="aporte"}).reduce(function(s,i){return s+i.amount},0);
-  var rsg=invs.filter(function(i){return i.movType==="resgate"}).reduce(function(s,i){return s+i.amount},0);
-  var txsI=invs.filter(function(i){return i.movType==="taxa"}).reduce(function(s,i){return s+i.amount},0);
-  var invAccs=(D.accounts||[]).filter(function(a){return a.type==="investimento"&&(a.ctx==="pj"||a.ctx==="both")});
+  var invs=D.pjInvestments||[];
+  var objs=D.pjObjectives||[];
+  var _invTab=window._invTabPJ||"carteira";
 
-  var hero=ce("div","hero");hero.style.background="linear-gradient(135deg,#059669,#0284c7)";
-  hero.innerHTML="<div class='hl'>INVESTIMENTOS PJ</div><div class='hv'>"+R(total)+"</div>"
-    +"<div class='hrow' style='grid-template-columns:repeat(4,1fr)'>"
-    +"<div class='hi'><div class='hil'>APORTES</div><div class='hiv' style='color:#86efac'>"+R(apt)+"</div></div>"
-    +"<div class='hi'><div class='hil'>RESGATES</div><div class='hiv' style='color:#fca5a5'>"+R(rsg)+"</div></div>"
-    +"<div class='hi'><div class='hil'>RENDIMENTOS</div><div class='hiv' style='color:#fde68a'>"+R(rend)+"</div></div>"
-    +"<div class='hi'><div class='hil'>TAXAS</div><div class='hiv' style='color:#fca5a5'>"+R(txsI)+"</div></div>"
-    +"</div>";c.appendChild(hero);
+  // ── Tabs ─────────────────────────────────────────────────────
+  var tabBar=ce("div");tabBar.style.cssText="display:flex;gap:0;background:#eaf0e8;border-radius:12px;padding:3px;margin-bottom:14px";
+  ["carteira","simulador"].forEach(function(tab){
+    var tb=ce("button");
+    tb.style.cssText="flex:1;padding:8px;border:none;border-radius:9px;font-family:Poppins,sans-serif;font-size:12px;font-weight:600;cursor:pointer;transition:.2s;";
+    tb.textContent=tab==="carteira"?"📊 Minha Carteira":"🧮 Simulador";
+    if(_invTab===tab){tb.style.cssText+=";background:#fff;color:#4A6741;box-shadow:0 1px 4px rgba(0,0,0,.1)"}
+    else{tb.style.cssText+=";background:transparent;color:#6b7280"}
+    tb.onclick=function(){window._invTabPJ=tab;nav("invest")};
+    tabBar.appendChild(tb);
+  });
+  c.appendChild(tabBar);
 
-  // Same structure as PF invest but for PJ
+  if(_invTab==="simulador"){rInvestSimPJ(c);return;}
+
+  // ═══════════════════════════════════════════════════════════════
+  // ÁREA 1 — MINHA CARTEIRA
+  // ═══════════════════════════════════════════════════════════════
+
+  // Investimentos reais (estrutura nova: tipo=fixo|variavel, nome, inst, valorInicial, valorAtual, etc)
+  var carteira=(invs).filter(function(i){return i.isAsset});
+  // Movimentações antigas (retrocompatível)
+  var movs=(invs).filter(function(i){return !i.isAsset});
+
+  var totalAplicado=carteira.reduce(function(s,i){return s+(i.valorInicial||0)},0);
+  var totalAtual=carteira.reduce(function(s,i){return s+(i.valorAtual||i.valorInicial||0)},0);
+  var rendimento=totalAtual-totalAplicado;
+  var rendPct=totalAplicado>0?(rendimento/totalAplicado*100):0;
+  var fixo=carteira.filter(function(i){return i.tipo==="fixo"});
+  var variavel=carteira.filter(function(i){return i.tipo==="variavel"});
+  var pctFixo=carteira.length?Math.round(fixo.length/carteira.length*100):0;
+  var pctVar=carteira.length?Math.round(variavel.length/carteira.length*100):0;
+
+  // Hero card carteira
+  if(carteira.length){
+    var hero=ce("div","hero");hero.style.background="linear-gradient(135deg,#059669,#0284c7)";
+    hero.innerHTML="<div class='hl'>PATRIMÔNIO TOTAL</div>"
+      +"<div class='hv'>"+R(totalAtual)+"</div>"
+      +"<div style='font-size:11px;color:rgba(255,255,255,.6);margin-bottom:8px'>atualização manual · não é tempo real</div>"
+      +"<div class='hrow' style='grid-template-columns:repeat(3,1fr)'>"
+      +"<div class='hi'><div class='hil'>APLICADO</div><div class='hiv' style='color:#86efac'>"+R(totalAplicado)+"</div></div>"
+      +"<div class='hi'><div class='hil'>RENDIMENTO</div><div class='hiv' style='color:"+(rendimento>=0?"#86efac":"#fca5a5")+"'>"+(rendimento>=0?"+":"")+R(rendimento)+" ("+rendPct.toFixed(1)+"%)</div></div>"
+      +"<div class='hi'><div class='hil'>RENDA FIXA</div><div class='hiv' style='color:#fde68a'>"+pctFixo+"%</div></div>"
+      +"</div>";
+    c.appendChild(hero);
+  }
+
+  // Botão novo investimento
+  var addWrap=ce("div");addWrap.style.cssText="display:flex;justify-content:flex-end;margin-bottom:10px";
+  var addBtn=ce("button","btn bpf");addBtn.textContent="+ Novo investimento";
+  addBtn.onclick=function(){oAddInvestimentoPJ()};addWrap.appendChild(addBtn);c.appendChild(addWrap);
+
+  // Filtros
+  var _filt=window._invFiltPJ||"todos";
+  var filtBar=ce("div");filtBar.style.cssText="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px";
+  [{k:"todos",l:"Todos"},{k:"fixo",l:"Renda fixa"},{k:"variavel",l:"Renda variável"}].forEach(function(f){
+    var fb=ce("button");
+    fb.style.cssText="padding:5px 12px;border-radius:20px;border:1.5px solid "+(f.k===_filt?"#4A6741":"var(--bd)")+";background:"+(f.k===_filt?"#4A6741":"transparent")+";color:"+(f.k===_filt?"#fff":"var(--mu)")+";font-size:11px;font-weight:500;cursor:pointer;font-family:Poppins,sans-serif";
+    fb.textContent=f.l;
+    (function(k){fb.onclick=function(){window._invFiltPJ=k;nav("invest")}})(f.k);
+    filtBar.appendChild(fb);
+  });
+  c.appendChild(filtBar);
+
+  // Lista de investimentos
+  var filtered=carteira.filter(function(i){return _filt==="todos"||i.tipo===_filt});
+
+  if(!carteira.length){
+    var emCard=ce("div","card");
+    emCard.innerHTML="<div style='text-align:center;padding:32px 16px'>"
+      +"<div style='font-size:32px;margin-bottom:12px'>📈</div>"
+      +"<div style='font-size:14px;font-weight:600;color:var(--tx);margin-bottom:8px'>Você ainda não cadastrou nenhum investimento.</div>"
+      +"<div style='font-size:12px;color:#9ca3af'>Clique em + Investimento para começar.</div>"
+      +"</div>";
+    c.appendChild(emCard);
+  } else if(filtered.length){
+    filtered.forEach(function(inv,fi){
+      var realIdx=invs.indexOf(inv);
+      var rend2=(inv.valorAtual||inv.valorInicial||0)-(inv.valorInicial||0);
+      var rPct2=inv.valorInicial?rend2/inv.valorInicial*100:0;
+      var card=ce("div","card");card.style.marginBottom="8px";
+
+      // Header
+      var hdr=ce("div");hdr.style.cssText="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px";
+      var left=ce("div");
+      left.innerHTML="<div style='font-size:13px;font-weight:700;color:var(--tx)'>"+(inv.nome||"—")+"</div>"
+        +"<div style='font-size:11px;color:#9ca3af'>"+(inv.tipo==="fixo"?"🔒 Renda fixa":"📊 Renda variável")+(inv.inst?" · "+inv.inst:"")+"</div>";
+      var right=ce("div");right.style.textAlign="right";
+      right.innerHTML="<div style='font-family:Cormorant Garamond,serif;font-size:18px;color:var(--tx)'>"+R(inv.valorAtual||inv.valorInicial||0)+"</div>"
+        +"<div style='font-size:11px;color:"+(rend2>=0?"#059669":"#dc2626")+"'>"+(rend2>=0?"+":"")+R(rend2)+" ("+rPct2.toFixed(1)+"%)</div>";
+      hdr.appendChild(left);hdr.appendChild(right);card.appendChild(hdr);
+
+      // Grid de detalhes
+      var grid=ce("div");grid.style.cssText="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:11px;color:#6b7280;margin-bottom:10px";
+      function detail(label,val){return "<div><div style='color:#9ca3af;font-size:10px'>"+label+"</div><div style='font-weight:600;color:var(--tx)'>"+val+"</div></div>"}
+      grid.innerHTML=detail("Aplicado",R(inv.valorInicial||0))
+        +detail("Aplicado em",inv.dataAplicacao||"—")
+        +(inv.tipo==="fixo"?detail("Rentabilidade",inv.rentTipo?(inv.rentTipo+(inv.taxa?" "+inv.taxa+"% a.a.":"")):"—"):detail("Qtd × Preço médio",(inv.qtd||"—")+" × "+(inv.precoMedio?R(inv.precoMedio):"—")))
+        +detail("Vencimento",inv.vencimento||"Sem vencimento")
+        +(inv.objetivo?detail("Objetivo",inv.objetivo):"")
+        +(inv.updatedAt?detail("Atualizado",new Date(inv.updatedAt).toLocaleString("pt-BR")):"");
+      card.appendChild(grid);
+
+      // Estimativa renda fixa
+      if(inv.tipo==="fixo"&&inv.taxa&&inv.dataAplicacao&&!inv.valorAtual){
+        var diasD=Math.floor((new Date()-new Date(inv.dataAplicacao))/86400000);
+        var taxaA=parseFloat(inv.taxa)||0;
+        var est=inv.valorInicial*Math.pow(1+taxaA/100,diasD/365);
+        var estimTag=ce("div");estimTag.style.cssText="background:#fef3c7;border-radius:8px;padding:8px 10px;font-size:11px;color:#92400e;margin-bottom:8px";
+        estimTag.innerHTML="💡 Estimativa com "+taxaA+"% a.a.: <b>"+R(est)+"</b> <span style='color:#9ca3af'>("+diasD+" dias)</span> · Resultado estimado, não garantido.";
+        card.appendChild(estimTag);
+      }
+
+      // Botões
+      var brow=ce("div","brow");
+      var updBtn=ce("button","btn");updBtn.style.cssText="font-size:11px;padding:6px 10px;background:#f0f9ff;color:#0284c7;border:1px solid #bae6fd";
+      updBtn.textContent="💰 Atualizar valor";
+      (function(ii,iv){updBtn.onclick=function(){oAtualizarValorPJ(ii,iv)}})(realIdx,inv);
+      var editBtn=ce("button","eb");editBtn.textContent="✏️";
+      (function(ii,iv){editBtn.onclick=function(){oEditInvestimentoPJ(ii,iv)}})(realIdx,inv);
+      var delBtn=ce("button","db");delBtn.textContent="🗑";
+      (function(ii){delBtn.onclick=function(){if(confirm("Excluir este investimento?")){D.pjInvestments.splice(ii,1);sv();nav("invest")}}})(realIdx);
+      brow.appendChild(updBtn);brow.appendChild(editBtn);brow.appendChild(delBtn);card.appendChild(brow);
+      c.appendChild(card);
+    });
+  }
+
+  // Objetivos financeiros
   var objCard=ce("div","card");
-  var osh=ce("div","sh");osh.innerHTML="<div class='st'>Objetivos PJ</div>";
-  var addOB=ce("button");addOB.style.cssText="font-size:11px;color:#C4693A;background:none;border:none;cursor:pointer;font-weight:600;font-family:inherit";addOB.textContent="+ Novo";
-  addOB.onclick=function(){oAddObjPJ()};osh.appendChild(addOB);objCard.appendChild(osh);
+  var osh=ce("div","sh");osh.innerHTML="<div class='st'>Objetivos financeiros</div>";
+  var addOB=ce("button");addOB.style.cssText="font-size:11px;color:#4A6741;background:none;border:none;cursor:pointer;font-weight:600;font-family:inherit";
+  addOB.textContent="+ Novo";addOB.onclick=function(){oAddObj()};osh.appendChild(addOB);objCard.appendChild(osh);
   if(objs.length){
     objs.forEach(function(obj,i){
-      var pct=obj.target>0?cl((obj.saved/obj.target)*100,0,100):0;var done=pct>=100;
-      var box=ce("div");box.style.cssText="background:#fafafe;border-radius:10px;padding:10px;border:1.5px solid "+(done?"#05966933":"#eaf0e8")+";margin-bottom:8px";
+      var investVinculados=carteira.filter(function(inv){return inv.objetivo===obj.name});
+      var valorVinculado=investVinculados.reduce(function(s,inv){return s+(inv.valorAtual||inv.valorInicial||0)},0);
+      var pct=obj.target>0?Math.min((valorVinculado/obj.target)*100,100):0;
+      var done=pct>=100;
+      var box=ce("div");box.style.cssText="background:#fafafe;border-radius:10px;padding:11px;border:1.5px solid "+(done?"#05966933":"#eaf0e8")+";margin-bottom:9px";
       var topRow=ce("div");topRow.style.cssText="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px";
-      topRow.innerHTML="<div style='display:flex;align-items:center;gap:7px'><span>"+obj.icon+"</span><div><div style='font-size:12px;font-weight:600'>"+obj.name+(done?" 🏆":"")+"</div></div></div><div style='text-align:right'><div style='font-family:Cormorant Garamond,serif;font-size:15px;color:"+(done?"#059669":"#C4693A")+"'>"+R(obj.saved)+"</div><div style='font-size:10px;color:#9ca3af'>de "+R(obj.target)+"</div></div>";
-      box.appendChild(topRow);box.appendChild(pb(pct,done?"#059669":"#C4693A",4));
-      var br=ce("div");br.style.marginTop="8px";
-      var delB=ce("button","btn bou");delB.style.cssText="font-size:11px;padding:6px 9px";delB.textContent="🗑";
+      topRow.innerHTML="<div style='display:flex;align-items:center;gap:7px'><span style='font-size:18px'>"+obj.icon+"</span>"
+        +"<div><div style='font-size:12px;font-weight:600'>"+obj.name+(done?" 🏆":"")+"</div>"
+        +"<div style='font-size:10px;color:#9ca3af'>"+obj.type+"</div></div></div>"
+        +"<div style='text-align:right'><div style='font-family:Cormorant Garamond,serif;font-size:16px;color:"+(done?"#059669":"#4A6741")+"'>"+R(valorVinculado)+"</div>"
+        +"<div style='font-size:10px;color:#9ca3af'>de "+R(obj.target)+"</div></div>";
+      box.appendChild(topRow);box.appendChild(pb(pct,done?"#059669":"#4A6741",5));
+      var br=ce("div","brow");
+      var delB=ce("button","btn bou");delB.style.cssText="font-size:12px;padding:7px 10px";delB.textContent="🗑";
       (function(ii){delB.onclick=function(){D.pjObjectives.splice(ii,1);sv();nav("invest")}})(i);
-      br.appendChild(delB);box.appendChild(br);objCard.appendChild(box)
-    })
-  }else{
-    var em=ce("div");em.style.cssText="text-align:center;padding:14px;color:#9ca3af;font-size:12px";em.textContent="Nenhum objetivo PJ. Clique em + Novo.";objCard.appendChild(em)
+      br.appendChild(delB);box.appendChild(br);objCard.appendChild(box);
+    });
+  } else {
+    var emO=ce("div");emO.style.cssText="text-align:center;padding:16px;color:#9ca3af;font-size:12px";
+    emO.textContent="Nenhum objetivo. Clique em + Novo para criar.";objCard.appendChild(emO);
   }
   c.appendChild(objCard);
 
-  if(invAccs.length){
-    var accCard=ce("div","card");var ash=ce("div","sh");ash.innerHTML="<div class='st'>Contas de investimento PJ</div>";accCard.appendChild(ash);
-    invAccs.forEach(function(a){
-      var rw=ce("div");rw.style.cssText="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #f0ecfe";
-      rw.innerHTML="<div><div style='font-size:12px;font-weight:600'>"+a.name+"</div><div style='font-size:10px;color:#9ca3af'>"+a.bank+"</div></div><div style='font-family:Cormorant Garamond,serif;font-size:15px;color:#059669'>"+R(accBal(a.id))+"</div>";
-      accCard.appendChild(rw)
-    });c.appendChild(accCard)
-  }
-
-  if(invs.length){
-    var hCard=ce("div","card");var hsh=ce("div","sh");hsh.innerHTML="<div class='st'>Histórico PJ</div>";hCard.appendChild(hsh);
-    var list=ce("div","txl");var icons={"aporte":"📥","resgate":"📤","rendimento":"💹","taxa":"💸"};var cols={"aporte":"#059669","resgate":"#4A6741","rendimento":"#0284c7","taxa":"#dc2626"};
-    invs.slice().reverse().forEach(function(inv,ri){
-      var realIdx=invs.length-1-ri;var rw=ce("div","txr");var ic=icons[inv.movType]||"📈";var col=cols[inv.movType]||"#059669";
-      rw.innerHTML="<div class='txi' style='background:#d1fae5'>"+ic+"</div><div class='txin'><div class='txd'>"+(inv.movType||"").toUpperCase()+(inv.invType?" · "+inv.invType:"")+(inv.description?" — "+inv.description:"")+"</div><div class='txm'>"+(inv.objective||"")+" · "+inv.date+"</div></div><span class='txa' style='color:"+col+"'>"+(inv.movType==="taxa"||inv.movType==="resgate"?"-":"+")+R(inv.amount)+"</span>";
-      var db=ce("button","db");db.textContent="🗑";(function(ii){db.onclick=function(){D.pjInvestments.splice(ii,1);sv();nav("invest")}})(realIdx);rw.appendChild(db);list.appendChild(rw)
+  // Histórico de movimentações antigas (retrocompatível)
+  if(movs.length){
+    var hCard=ce("div","card");
+    var hsh=ce("div","sh");hsh.innerHTML="<div class='st'>Histórico de movimentações</div>";hCard.appendChild(hsh);
+    var list=ce("div","txl");
+    var icons={"aporte":"📥","resgate":"📤","rendimento":"💹","taxa":"💸"};
+    var cols={"aporte":"#059669","resgate":"#4A6741","rendimento":"#0284c7","taxa":"#dc2626"};
+    movs.slice().reverse().forEach(function(inv,ri){
+      var realIdx=invs.indexOf(inv);
+      var rw=ce("div","txr");
+      var ic=icons[inv.movType]||"📈";var col=cols[inv.movType]||"#059669";
+      var desc=(inv.movType||"aporte").toUpperCase()+(inv.invType?" · "+inv.invType:"")+(inv.description?" — "+inv.description:"");
+      rw.innerHTML="<div class='txi' style='background:#d1fae5;font-size:14px'>"+ic+"</div>"
+        +"<div class='txin'><div class='txd'>"+desc+"</div><div class='txm'>"+(inv.objective||"")+" · "+inv.date+"</div></div>"
+        +"<span class='txa' style='color:"+col+"'>"+(inv.movType==="taxa"||inv.movType==="resgate"?"-":"+")+R(inv.amount)+"</span>";
+      var db=ce("button","db");db.textContent="🗑";
+      (function(ii){db.onclick=function(){D.pjInvestments.splice(ii,1);sv();nav("invest")}})(realIdx);
+      rw.appendChild(db);list.appendChild(rw);
     });
-    hCard.appendChild(list);c.appendChild(hCard)
+    hCard.appendChild(list);c.appendChild(hCard);
   }
 }
+
+// ── Modal: Novo Investimento ─────────────────────────────────────────────────
+// ── Modais PJ: independentes ─────────────────────────────────────────────────
+function oAddInvestimentoPJ(){
+  var bd=gi("m2b");bd.innerHTML="";
+  var tt=ce("div","mt");tt.textContent="Novo investimento — PJ";bd.appendChild(tt);
+  var _tipo="fixo";
+  var typeSel=ce("div");typeSel.style.cssText="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px";
+  ["fixo","variavel"].forEach(function(t){
+    var tb=ce("button");tb.id="inv-tipo-pj-"+t;
+    tb.style.cssText="padding:10px;border-radius:10px;border:2px solid "+(t==="fixo"?"#C4693A":"var(--bd)")+";background:"+(t==="fixo"?"#faeae0":"transparent")+";font-family:Poppins,sans-serif;font-size:12px;font-weight:600;cursor:pointer;color:var(--tx)";
+    tb.innerHTML=t==="fixo"?"🔒 Renda Fixa":"📊 Renda Variável";
+    tb.onclick=function(){
+      _tipo=t;
+      ["fixo","variavel"].forEach(function(x){
+        var b=gi("inv-tipo-pj-"+x);
+        b.style.border="2px solid "+(x===_tipo?"#C4693A":"var(--bd)");
+        b.style.background=x===_tipo?"#faeae0":"transparent";
+      });
+      renderFormPJ();
+    };
+    typeSel.appendChild(tb);
+  });
+  bd.appendChild(typeSel);
+  var formArea=ce("div");formArea.id="inv-form-pj";bd.appendChild(formArea);
+  function inp(id,placeholder,type){type=type||"text";var i=ce("input","inp");i.id=id;i.placeholder=placeholder;i.type=type;i.style.marginBottom="8px";return i}
+  function lbl(txt){var l=ce("label","lbl");l.textContent=txt;return l}
+  function sel(id,opts){var s=ce("select","inp sel");s.id=id;s.style.marginBottom="8px";opts.forEach(function(o){var op=ce("option");op.value=o.v;op.textContent=o.l;s.appendChild(op)});return s}
+  function renderFormPJ(){
+    formArea.innerHTML="";
+    if(_tipo==="fixo"){
+      formArea.appendChild(lbl("Nome do investimento"));formArea.appendChild(inp("ii-nome-pj","Ex: CDB Nubank 13% a.a."));
+      formArea.appendChild(lbl("Instituição"));formArea.appendChild(inp("ii-inst-pj","Ex: Nubank, XP"));
+      formArea.appendChild(lbl("Valor inicial (R$)"));formArea.appendChild(inp("ii-val-pj","0,00","number"));
+      formArea.appendChild(lbl("Data da aplicação"));formArea.appendChild(inp("ii-data-pj","","date"));
+      formArea.appendChild(lbl("Tipo de rentabilidade"));
+      formArea.appendChild(sel("ii-rent-pj",[{v:"prefixado",l:"Prefixado"},{v:"cdi",l:"% do CDI"},{v:"ipca",l:"IPCA + taxa"},{v:"outro",l:"Outro"}]));
+      formArea.appendChild(lbl("Taxa (% a.a.)"));formArea.appendChild(inp("ii-taxa-pj","Ex: 13","number"));
+      formArea.appendChild(lbl("Vencimento (opcional)"));formArea.appendChild(inp("ii-venc-pj","","date"));
+      formArea.appendChild(lbl("Objetivo (opcional)"));
+      formArea.appendChild(sel("ii-obj-pj",[{v:"",l:"Nenhum"}].concat((D.pjObjectives||[]).map(function(o){return{v:o.name,l:o.icon+" "+o.name}}))));
+    } else {
+      formArea.appendChild(lbl("Nome do ativo"));formArea.appendChild(inp("ii-nome-pj","Ex: PETR4, HGLG11"));
+      formArea.appendChild(lbl("Tipo"));
+      formArea.appendChild(sel("ii-subtipo-pj",[{v:"acao",l:"Ação"},{v:"fii",l:"Fundo Imobiliário"},{v:"etf",l:"ETF"},{v:"fundo",l:"Fundo"},{v:"outro",l:"Outro"}]));
+      formArea.appendChild(lbl("Instituição"));formArea.appendChild(inp("ii-inst-pj","Ex: Clear, XP"));
+      formArea.appendChild(lbl("Quantidade"));formArea.appendChild(inp("ii-qtd-pj","0","number"));
+      formArea.appendChild(lbl("Preço médio (R$)"));formArea.appendChild(inp("ii-preco-pj","0,00","number"));
+      formArea.appendChild(lbl("Data da compra"));formArea.appendChild(inp("ii-data-pj","","date"));
+      formArea.appendChild(lbl("Objetivo (opcional)"));
+      formArea.appendChild(sel("ii-obj-pj",[{v:"",l:"Nenhum"}].concat((D.pjObjectives||[]).map(function(o){return{v:o.name,l:o.icon+" "+o.name}}))));
+    }
+  }
+  renderFormPJ();
+  var brow=ce("div","brow");
+  var cancel=ce("button","btn bou");cancel.textContent="Cancelar";cancel.onclick=function(){oM(false,"m2")};
+  var save=ce("button","btn bpj");save.textContent="Salvar";
+  save.onclick=function(){
+    var nome=gi("ii-nome-pj")?gi("ii-nome-pj").value.trim():"";
+    var inst=gi("ii-inst-pj")?gi("ii-inst-pj").value.trim():"";
+    var data=gi("ii-data-pj")?gi("ii-data-pj").value:"";
+    var obj=gi("ii-obj-pj")?gi("ii-obj-pj").value:"";
+    if(!nome){alert("Informe o nome do investimento.");return}
+    var inv={id:Date.now(),isAsset:true,tipo:_tipo,nome:nome,inst:inst,dataAplicacao:data,objetivo:obj};
+    if(_tipo==="fixo"){
+      inv.valorInicial=parseFloat(gi("ii-val-pj")?gi("ii-val-pj").value:0)||0;
+      inv.rentTipo=gi("ii-rent-pj")?gi("ii-rent-pj").value:"prefixado";
+      inv.taxa=parseFloat(gi("ii-taxa-pj")?gi("ii-taxa-pj").value:0)||0;
+      inv.vencimento=gi("ii-venc-pj")?gi("ii-venc-pj").value:"";
+    } else {
+      inv.subtipo=gi("ii-subtipo-pj")?gi("ii-subtipo-pj").value:"acao";
+      inv.qtd=parseFloat(gi("ii-qtd-pj")?gi("ii-qtd-pj").value:0)||0;
+      inv.precoMedio=parseFloat(gi("ii-preco-pj")?gi("ii-preco-pj").value:0)||0;
+      inv.valorInicial=inv.qtd*inv.precoMedio;
+    }
+    D.pjInvestments=D.pjInvestments||[];D.pjInvestments.push(inv);sv();oM(false,"m2");nav("invest");
+  };
+  brow.appendChild(cancel);brow.appendChild(save);bd.appendChild(brow);oM(true,"m2");
+}
+
+function oEditInvestimentoPJ(idx,inv){
+  var bd=gi("m2b");bd.innerHTML="";
+  var tt=ce("div","mt");tt.textContent="Editar investimento — PJ";bd.appendChild(tt);
+  function inp(id,placeholder,val,type){type=type||"text";var i=ce("input","inp");i.id=id;i.placeholder=placeholder;i.value=val||"";i.type=type;i.style.marginBottom="8px";return i}
+  function lbl(txt){var l=ce("label","lbl");l.textContent=txt;return l}
+  bd.appendChild(lbl("Nome"));bd.appendChild(inp("ei-nome-pj","Nome",inv.nome));
+  bd.appendChild(lbl("Instituição"));bd.appendChild(inp("ei-inst-pj","Instituição",inv.inst));
+  if(inv.tipo==="fixo"){
+    bd.appendChild(lbl("Valor inicial (R$)"));bd.appendChild(inp("ei-val-pj","",inv.valorInicial,"number"));
+    bd.appendChild(lbl("Taxa (% a.a.)"));bd.appendChild(inp("ei-taxa-pj","",inv.taxa,"number"));
+    bd.appendChild(lbl("Vencimento"));bd.appendChild(inp("ei-venc-pj","",inv.vencimento,"date"));
+  } else {
+    bd.appendChild(lbl("Quantidade"));bd.appendChild(inp("ei-qtd-pj","",inv.qtd,"number"));
+    bd.appendChild(lbl("Preço médio (R$)"));bd.appendChild(inp("ei-preco-pj","",inv.precoMedio,"number"));
+  }
+  var brow=ce("div","brow");
+  var cancel=ce("button","btn bou");cancel.textContent="Cancelar";cancel.onclick=function(){oM(false,"m2")};
+  var save=ce("button","btn bpj");save.textContent="Salvar";
+  save.onclick=function(){
+    D.pjInvestments[idx].nome=gi("ei-nome-pj").value.trim()||inv.nome;
+    D.pjInvestments[idx].inst=gi("ei-inst-pj").value.trim()||"";
+    if(inv.tipo==="fixo"){
+      D.pjInvestments[idx].valorInicial=parseFloat(gi("ei-val-pj").value)||inv.valorInicial;
+      D.pjInvestments[idx].taxa=parseFloat(gi("ei-taxa-pj").value)||inv.taxa;
+      D.pjInvestments[idx].vencimento=gi("ei-venc-pj").value||"";
+    } else {
+      D.pjInvestments[idx].qtd=parseFloat(gi("ei-qtd-pj").value)||inv.qtd;
+      D.pjInvestments[idx].precoMedio=parseFloat(gi("ei-preco-pj").value)||inv.precoMedio;
+      D.pjInvestments[idx].valorInicial=(D.pjInvestments[idx].qtd)*(D.pjInvestments[idx].precoMedio);
+    }
+    sv();oM(false,"m2");nav("invest");
+  };
+  brow.appendChild(cancel);brow.appendChild(save);bd.appendChild(brow);oM(true,"m2");
+}
+
+function oAtualizarValorPJ(idx,inv){
+  var bd=gi("m2b");bd.innerHTML="";
+  var tt=ce("div","mt");tt.textContent="Atualizar valor · "+inv.nome;bd.appendChild(tt);
+  var note=ce("div");note.style.cssText="font-size:11px;color:#6b7280;background:#f9fafb;border-radius:8px;padding:10px;margin-bottom:12px";
+  note.textContent="Informe o valor atual. Esta atualização é manual — não está em tempo real.";
+  bd.appendChild(note);
+  var lbl=ce("label","lbl");lbl.textContent="Valor atual (R$)";bd.appendChild(lbl);
+  var valInp=ce("input","inp");valInp.type="number";valInp.value=inv.valorAtual||inv.valorInicial||0;valInp.style.marginBottom="8px";bd.appendChild(valInp);
+  var brow=ce("div","brow");
+  var cancel=ce("button","btn bou");cancel.textContent="Cancelar";cancel.onclick=function(){oM(false,"m2")};
+  var save=ce("button","btn bpj");save.textContent="Salvar";
+  save.onclick=function(){
+    var v=parseFloat(valInp.value)||0;
+    D.pjInvestments[idx].valorAtual=v;
+    D.pjInvestments[idx].updatedAt=new Date().toISOString();
+    sv();oM(false,"m2");nav("invest");
+  };
+  brow.appendChild(cancel);brow.appendChild(save);bd.appendChild(brow);oM(true,"m2");
+}
+
 
 function oAddObjPJ(){
   var bd=gi("m2b");bd.innerHTML="";
