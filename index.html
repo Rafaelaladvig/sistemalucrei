@@ -605,6 +605,34 @@ button,input,select,textarea{font-family:inherit;font-size:14px}
 
 // ═══ CONSTANTS ═══════════════════════════════════════════════════════════════
 var BANKS=["Nubank","Itaú","Bradesco","Santander","Caixa","BB","Inter","C6","BTG","Sicoob","Outro"]; var BRANDS=["Visa","Mastercard","Elo","Amex","Hipercard","Outro"]; var MF=["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"]; var INV_TYPES=["CDB","LCI","LCA","LCX","Poupança","Tesouro Direto","Ações","FII","Criptomoedas","Previdência","Outro"]; var OBJ_TYPES=["Reserva de emergência","Viagem","Aniversário","Casamento","Reforma","Educação","Carro","Aposentadoria","Outro"]; var PAY=["PIX","Dinheiro","Débito","Transferência","Cartão de Crédito","Saque"];
+var MODAL_LBL={cdb:"CDB",rdb:"RDB",lci:"LCI",lca:"LCA",tesouro:"Tesouro Direto",debenture:"Debênture",poupanca:"Poupança",fundo_rf:"Fundo de renda fixa",outro:"Outro"};
+var LIQ_LBL={diaria:"Diária",vencimento:"No vencimento",outro:"Outro"};
+function rentDetailLabel(inv){
+  if(inv.rentTipo==="cdi_pct")return "% do CDI"+(inv.cdiPct?" · "+inv.cdiPct+"%":"");
+  if(inv.rentTipo==="ipca_mais")return "IPCA + taxa"+(inv.ipcaTaxa?" · +"+inv.ipcaTaxa+"% a.a.":"");
+  if(inv.rentTipo==="personalizado")return inv.taxaPersonalizada||"Taxa personalizada";
+  if(inv.rentTipo==="prefixado")return "Prefixado"+(inv.taxa?" · "+inv.taxa+"% a.a.":"");
+  // valores legados (registros criados antes desta sprint)
+  if(inv.rentTipo==="cdi")return "% do CDI"+(inv.taxa?" · "+inv.taxa+"%":"");
+  if(inv.rentTipo==="ipca")return "IPCA + taxa"+(inv.taxa?" · +"+inv.taxa+"% a.a.":"");
+  return inv.rentTipo||"—";
+}
+// Exclusão segura: preserva histórico de atualizações/correções marcando como encerrado
+// em vez de apagar, quando o investimento já possui movimentações registradas.
+function delInvestimento(idx,isPJ){
+  var arr=isPJ?(D.pjInvestments||[]):(D.investments||[]);
+  var rec=arr[idx];if(!rec)return;
+  var temHistorico=(rec.historico&&rec.historico.length>0)||hasInvMovs(rec.id);
+  if(temHistorico){
+    if(confirm("Este investimento já possui aportes, resgates, atualizações ou correções registradas. Para preservar o histórico, ele será marcado como Encerrado em vez de excluído.\n\nDeseja encerrar este investimento?")){
+      rec.status="encerrado";sv();nav("invest");
+    }
+    return;
+  }
+  if(confirm("Tem certeza de que deseja excluir este investimento?")){
+    arr.splice(idx,1);sv();nav("invest");
+  }
+}
 var DEF_OUT=[{n:"Moradia",i:"🏠",c:"#6366f1"},{n:"Alimentação",i:"🛒",c:"#f59e0b"},{n:"Transporte",i:"🚗",c:"#3b82f6"},{n:"Saúde",i:"💊",c:"#10b981"},{n:"Educação",i:"📚",c:"#8b5cf6"},{n:"Lazer",i:"🎉",c:"#ec4899"},{n:"Vestuário",i:"👗",c:"#f97316"},{n:"Filhos",i:"👶",c:"#06b6d4"},{n:"Outros",i:"📦",c:"#94a3b8"}];
 var FIXED_OUT_CATS=[{n:"Investimento",i:"📈",c:"#059669",fixed:true}];// Fixed cats added separately
 var DEF_IN=[{n:"Salário",i:"💼",c:"#059669"},{n:"Freelance",i:"💻",c:"#4A6741"},{n:"PIX recebido",i:"📲",c:"#8b5cf6"},{n:"Rendimento",i:"📈",c:"#0284c7"},{n:"Outros",i:"📦",c:"#94a3b8"}];
@@ -796,7 +824,7 @@ var DINIT={
   onboarded:false,tourDone:false,tour_pf_concluido:false,tour_pj_concluido:false,perfil:"autonoma",userName:"",userEmail:"",businessName:"",proLabore:0,
   pfInCats:[],pfOutCats:[],inCats:[],outCats:[],services:[],
   accounts:[],cards:[],cardPurchases:[],cardBills:[],
-  investments:[],pjInvestments:[],objectives:[],pjObjectives:[],
+  investments:[],pjInvestments:[],objectives:[],pjObjectives:[],invMovs:[],investPlans:[],pendingEntries:[],
   pf:{transactions:[],plan:{}},
   pj:{transactions:[],plan:{},planCatsIn:[],planCatsOut:[]},
   clients:[],agenda:[],
@@ -804,6 +832,30 @@ var DINIT={
   maquinas:[]
 };
 var D=JSON.parse(JSON.stringify(DINIT));
+
+// ── Sprint 5 (itens 13-15): campos PREPARADOS para integrações futuras. ──────
+// Nada aqui conecta a serviço externo, solicita credencial ou roda sincronização.
+// São apenas os nomes de campo que os investimentos/movimentações PODERÃO
+// receber quando essas integrações forem implementadas em sprints futuras.
+//
+// Investimento (D.investments / D.pjInvestments) — Open Finance, quando existir:
+//   openFinance: { externalInstId, externalAccountId, externalInvestmentId,
+//                  source, lastSyncAt, consentStatus, consentExpiresAt, syncStatus }
+//
+// Movimentação (D.invMovs) — identificador externo, quando existir:
+//   externalTxId
+//
+// D.pendingEntries[] — lançamento provisório via WhatsApp/Luna, quando existir:
+//   { id, origem ("whatsapp"|"audio"|"manual"), statusRevisao ("pendente"|"confirmado"|"corrigido"|"cancelado"),
+//     confianca (0-1), arquivoRelacionado, mensagemOriginal, externalId, vinculoMovimentacaoId }
+//
+// Conciliação (por movimentação, quando existir):
+//   reconciliacao: { status ("nao_conciliado"|"sugestao_encontrada"|"conciliado"|"ignorado"|"divergente"),
+//                     valor, data, conta, descricao, instituicao, favorecido, investimento, documento, idBancario }
+//
+// Nenhum segredo (chave, token, senha bancária) deve ser colocado no frontend quando essas
+// integrações forem implementadas — a conexão real deverá passar pelo backend (Railway).
+
 var _pendingCard=null;
 var _email="";
 
@@ -929,6 +981,12 @@ function accBal(accId){
     if(String(inv.fromId)===aid)b-=inv.amount;
     if(String(inv.toId)===aid)b+=inv.amount;
   });
+  // Aportes/resgates novos (Sprint 3 — estrutura unificada D.invMovs)
+  ;(D.invMovs||[]).forEach(function(m){
+    if(m.status!=="concluido")return;
+    if(m.tipo==="APORTE_INVESTIMENTO"&&String(m.contaOrigemId)===aid)b-=m.valor;
+    else if(m.tipo==="RESGATE_INVESTIMENTO"&&String(m.contaDestinoId)===aid)b+=m.valorLiquido;
+  });
 
   // Card bill payments
   ;(D.cardBills||[]).filter(function(b2){return String(b2.fromAccId)===aid})
@@ -943,8 +1001,14 @@ function totalPF(){
     return s+(t.type==="entrada"?t.amount:-t.amount)
   },0);
   var invSum=(D.investments||[]).reduce(function(s,inv){var fromAcc=(D.accounts||[]).find(function(a){return String(a.id)===String(inv.fromId)&&a.type!=="investimento"});var toAcc=(D.accounts||[]).find(function(a){return String(a.id)===String(inv.toId)&&a.type!=="investimento"});if(fromAcc)s-=inv.amount;if(toAcc)s+=inv.amount;return s},0);
+  var invMovSum=(D.invMovs||[]).reduce(function(s,m){
+    if(m.ambiente!=="pf"||m.status!=="concluido")return s;
+    if(m.tipo==="APORTE_INVESTIMENTO")s-=m.valor;
+    else if(m.tipo==="RESGATE_INVESTIMENTO")s+=m.valorLiquido;
+    return s;
+  },0);
   var cardSum=(D.cardBills||[]).filter(function(b){return b.paid&&b.fromAccId}).reduce(function(s,b){return s-b.paidAmount},0);
-  return accSum+txSum+invSum+cardSum;
+  return accSum+txSum+invSum+invMovSum+cardSum;
 }
 // Returns {saldo: sum of positive account balances, overdraftUsed: sum of negative balances}
 // Negative accounts (using overdraft/cheque especial) are shown SEPARATELY
@@ -1821,7 +1885,7 @@ function nav(t){
   gi("tb-a").style.background=t==="invest"?"#059669":isPF?"#4A6741":"#C4693A";
   gi("tb-a").textContent=t==="invest"?"+ Investimento":t==="cartoes"?"+ Compra":"+ Lançar";
   // PJ: +Lançar only on dash (Início); PF: hide only on luna/config/etc
-  var hideLancar=isPF?["luna","config","clientes","agenda","pricing"].includes(t):t!=="dash";
+  var hideLancar=isPF?["luna","config","clientes","agenda","pricing","invest"].includes(t):t!=="dash";
   gi("tb-a").style.display=hideLancar?"none":"flex";
   gi("tb-a").onclick=function(){if(tab==="invest")oInv();else if(tab==="cartoes")oCartaoCompra();else oLanc()};
   // Render
@@ -2336,6 +2400,11 @@ function rInvest(c){
 
   if(_invTab==="simulador"){rInvestSim(c);return;}
 
+  var checkWrap=ce("div");checkWrap.style.cssText="text-align:right;margin-bottom:8px";
+  var checkBtn=ce("button");checkBtn.style.cssText="background:none;border:none;color:#9ca3af;cursor:pointer;font-size:10px;font-family:inherit;text-decoration:underline;padding:0";
+  checkBtn.textContent="🔍 Verificar consistência";checkBtn.onclick=verificarConsistencia;
+  checkWrap.appendChild(checkBtn);c.appendChild(checkWrap);
+
   // ═══════════════════════════════════════════════════════════════
   // ÁREA 1 — MINHA CARTEIRA
   // ═══════════════════════════════════════════════════════════════
@@ -2402,11 +2471,12 @@ function rInvest(c){
       var rend2=(inv.valorAtual||inv.valorInicial||0)-(inv.valorInicial||0);
       var rPct2=inv.valorInicial?rend2/inv.valorInicial*100:0;
       var card=ce("div","card");card.style.marginBottom="8px";
+      if(inv.status==="encerrado")card.style.opacity="0.65";
 
       // Header
       var hdr=ce("div");hdr.style.cssText="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px";
       var left=ce("div");
-      left.innerHTML="<div style='font-size:13px;font-weight:700;color:var(--tx)'>"+(inv.nome||"—")+"</div>"
+      left.innerHTML="<div style='font-size:13px;font-weight:700;color:var(--tx)'>"+(inv.nome||"—")+(inv.status==="encerrado"?" <span style='font-size:9px;font-weight:700;color:#9ca3af;border:1px solid #d1d5db;border-radius:20px;padding:1px 7px;vertical-align:middle'>ENCERRADO</span>":"")+"</div>"
         +"<div style='font-size:11px;color:#9ca3af'>"+(inv.tipo==="fixo"?"🔒 Renda fixa":"📊 Renda variável")+(inv.inst?" · "+inv.inst:"")+"</div>";
       var right=ce("div");right.style.textAlign="right";
       right.innerHTML="<div style='font-family:Cormorant Garamond,serif;font-size:18px;color:var(--tx)'>"+R(inv.valorAtual||inv.valorInicial||0)+"</div>"
@@ -2418,8 +2488,11 @@ function rInvest(c){
       function detail(label,val){return "<div><div style='color:#9ca3af;font-size:10px'>"+label+"</div><div style='font-weight:600;color:var(--tx)'>"+val+"</div></div>"}
       grid.innerHTML=detail("Aplicado",R(inv.valorInicial||0))
         +detail("Aplicado em",inv.dataAplicacao||"—")
-        +(inv.tipo==="fixo"?detail("Rentabilidade",inv.rentTipo?(inv.rentTipo+(inv.taxa?" "+inv.taxa+"% a.a.":"")):"—"):detail("Qtd × Preço médio",(inv.qtd||"—")+" × "+(inv.precoMedio?R(inv.precoMedio):"—")))
-        +detail("Vencimento",inv.vencimento||"Sem vencimento")
+        +(inv.tipo==="fixo"?detail("Rentabilidade",rentDetailLabel(inv)):detail("Qtd × Preço médio",(inv.qtd||"—")+" × "+(inv.precoMedio?R(inv.precoMedio):"—")))
+        +(inv.tipo==="fixo"?detail("Vencimento",inv.vencimento||"Sem vencimento"):"")
+        +(inv.tipo==="fixo"&&inv.modalidade?detail("Modalidade",MODAL_LBL[inv.modalidade]||inv.modalidade):"")
+        +(inv.tipo==="fixo"&&inv.liquidez?detail("Liquidez",LIQ_LBL[inv.liquidez]||inv.liquidez):"")
+        +(inv.tipo==="fixo"&&inv.isento?detail("IR","Isento"):"")
         +(inv.objetivo?detail("Objetivo",inv.objetivo):"")
         +(inv.updatedAt?detail("Atualizado",new Date(inv.updatedAt).toLocaleString("pt-BR")):"");
       card.appendChild(grid);
@@ -2434,47 +2507,81 @@ function rInvest(c){
         card.appendChild(estimTag);
       }
 
+      // Vincular valor inicial (opcional, item 6 — só aparece antes do 1º movimento real)
+      if((inv.valorInicial||0)>0&&!hasInvMovs(inv.id)&&inv.status!=="encerrado"){
+        var vinc=ce("div");vinc.style.cssText="font-size:10.5px;margin-bottom:8px";
+        var vincBtn=ce("button");vincBtn.style.cssText="background:none;border:none;color:#0284c7;cursor:pointer;font-size:10.5px;font-family:inherit;text-decoration:underline;padding:0";
+        vincBtn.textContent="Vincular valor inicial a uma conta de origem";
+        (function(ii,iv){vincBtn.onclick=function(){oVincularValorInicial(ii,iv)}})(realIdx,inv);
+        vinc.appendChild(vincBtn);card.appendChild(vinc);
+      }
+      var histLink=ce("div");histLink.style.cssText="font-size:10.5px;margin-bottom:8px";
+      var histBtn=ce("button");histBtn.style.cssText="background:none;border:none;color:#6b7280;cursor:pointer;font-size:10.5px;font-family:inherit;text-decoration:underline;padding:0";
+      histBtn.textContent="📜 Ver histórico completo";
+      (function(ii){histBtn.onclick=function(){verHistoricoInvestimento(ii,false)}})(realIdx);
+      histLink.appendChild(histBtn);card.appendChild(histLink);
+
       // Botões
       var brow=ce("div","brow");
+      if(inv.status!=="encerrado"){
+        var apBtn=ce("button","btn");apBtn.style.cssText="font-size:11px;padding:6px 10px;background:#f0fdf4;color:#059669;border:1px solid #bbf7d0";
+        apBtn.textContent="📥 Aportar";
+        (function(ii,iv){apBtn.onclick=function(){oAportarInvestimento(ii,iv)}})(realIdx,inv);
+        brow.appendChild(apBtn);
+        var rgBtn=ce("button","btn");rgBtn.style.cssText="font-size:11px;padding:6px 10px;background:#fff7ed;color:#c2410c;border:1px solid #fed7aa";
+        rgBtn.textContent="📤 Resgatar";
+        (function(ii,iv){rgBtn.onclick=function(){oResgatarInvestimento(ii,iv)}})(realIdx,inv);
+        brow.appendChild(rgBtn);
+      }
       var updBtn=ce("button","btn");updBtn.style.cssText="font-size:11px;padding:6px 10px;background:#f0f9ff;color:#0284c7;border:1px solid #bae6fd";
       updBtn.textContent="💰 Atualizar valor";
       (function(ii,iv){updBtn.onclick=function(){oAtualizarValor(ii,iv)}})(realIdx,inv);
       var editBtn=ce("button","eb");editBtn.textContent="✏️";
       (function(ii,iv){editBtn.onclick=function(){oEditInvestimento(ii,iv)}})(realIdx,inv);
       var delBtn=ce("button","db");delBtn.textContent="🗑";
-      (function(ii){delBtn.onclick=function(){if(confirm("Excluir este investimento?")){D.investments.splice(ii,1);sv();nav("invest")}}})(realIdx);
+      (function(ii){delBtn.onclick=function(){delInvestimento(ii,false)}})(realIdx);
       brow.appendChild(updBtn);brow.appendChild(editBtn);brow.appendChild(delBtn);card.appendChild(brow);
       c.appendChild(card);
     });
   }
 
   // Objetivos financeiros
-  var objCard=ce("div","card");
-  var osh=ce("div","sh");osh.innerHTML="<div class='st'>Objetivos financeiros</div>";
+  var objCard=ce("div","card");objCard.style.padding="20px";
+  var osh=ce("div","sh");osh.style.marginBottom="14px";osh.innerHTML="<div style='font-size:13px;font-weight:700;color:var(--tx)'>Objetivos financeiros</div>";
   var addOB=ce("button");addOB.style.cssText="font-size:11px;color:#4A6741;background:none;border:none;cursor:pointer;font-weight:600;font-family:inherit";
   addOB.textContent="+ Novo";addOB.onclick=function(){oAddObj()};osh.appendChild(addOB);objCard.appendChild(osh);
   if(objs.length){
     objs.forEach(function(obj,i){
-      var investVinculados=carteira.filter(function(inv){return inv.objetivo===obj.name});
-      var valorVinculado=investVinculados.reduce(function(s,inv){return s+(inv.valorAtual||inv.valorInicial||0)},0);
-      var pct=obj.target>0?Math.min((valorVinculado/obj.target)*100,100):0;
-      var done=pct>=100;
-      var box=ce("div");box.style.cssText="background:#fafafe;border-radius:10px;padding:11px;border:1.5px solid "+(done?"#05966933":"#eaf0e8")+";margin-bottom:9px";
+      var investVinculados=carteira.filter(function(inv){return inv.objetivoId?String(inv.objetivoId)===String(obj.id):inv.objetivo===obj.name});
+      var valorVinculado=investVinculados.reduce(function(s,inv){return s+(inv.valorAtual||inv.valorInicial||0)},0)+(obj.saved||0);
+      var pctReal=obj.target>0?(valorVinculado/obj.target)*100:0;
+      var pct=Math.min(pctReal,100);
+      var restante=Math.max(0,obj.target-valorVinculado);
+      var done=pctReal>=100;
+      var box=ce("div");box.style.cssText="background:#fafafe;border-radius:10px;padding:11px;border:1.5px solid "+(done?"#05966933":"#eaf0e8")+";margin-bottom:9px;cursor:pointer";
       var topRow=ce("div");topRow.style.cssText="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px";
       topRow.innerHTML="<div style='display:flex;align-items:center;gap:7px'><span style='font-size:18px'>"+obj.icon+"</span>"
         +"<div><div style='font-size:12px;font-weight:600'>"+obj.name+(done?" 🏆":"")+"</div>"
-        +"<div style='font-size:10px;color:#9ca3af'>"+obj.type+"</div></div></div>"
+        +"<div style='font-size:10px;color:#9ca3af'>"+obj.type+(obj.deadline?" · até "+obj.deadline:"")+"</div></div></div>"
         +"<div style='text-align:right'><div style='font-family:Cormorant Garamond,serif;font-size:16px;color:"+(done?"#059669":"#4A6741")+"'>"+R(valorVinculado)+"</div>"
-        +"<div style='font-size:10px;color:#9ca3af'>de "+R(obj.target)+"</div></div>";
+        +"<div style='font-size:10px;color:#9ca3af'>de "+R(obj.target)+" · "+pctReal.toFixed(1)+"%</div></div>";
       box.appendChild(topRow);box.appendChild(pb(pct,done?"#059669":"#4A6741",5));
+      var meta=ce("div");meta.style.cssText="display:flex;justify-content:space-between;font-size:10px;color:#9ca3af;margin-top:6px";
+      meta.innerHTML="<span>"+investVinculados.length+" investimento"+(investVinculados.length!==1?"s":"")+" vinculado"+(investVinculados.length!==1?"s":"")+"</span>"
+        +"<span>"+(done?"Meta concluída":"Restam "+R(restante))+"</span>";
+      box.appendChild(meta);
+      if(obj.aporteMensalPlanejado)box.insertAdjacentHTML("beforeend","<div style='font-size:10px;color:#9ca3af;margin-top:2px'>Aporte mensal planejado: "+R(obj.aporteMensalPlanejado)+"</div>");
+      (function(o,iv,vv){box.onclick=function(e){if(e.target.tagName==="BUTTON")return;verComposicaoObjetivo(o,iv,vv,false)}})(obj,investVinculados,valorVinculado);
       var br=ce("div","brow");
       var delB=ce("button","btn bou");delB.style.cssText="font-size:12px;padding:7px 10px";delB.textContent="🗑";
-      (function(ii){delB.onclick=function(){D.objectives.splice(ii,1);sv();nav("invest")}})(i);
+      (function(ii){delB.onclick=function(e){e.stopPropagation();D.objectives.splice(ii,1);sv();nav("invest")}})(i);
       br.appendChild(delB);box.appendChild(br);objCard.appendChild(box);
     });
   } else {
-    var emO=ce("div");emO.style.cssText="text-align:center;padding:16px;color:#9ca3af;font-size:12px";
-    emO.textContent="Nenhum objetivo. Clique em + Novo para criar.";objCard.appendChild(emO);
+    var emO=ce("div");emO.style.cssText="text-align:center;padding:28px 16px";
+    emO.innerHTML="<div style='font-size:14px;font-weight:600;color:var(--tx);margin-bottom:8px'>Você ainda não tem nenhum objetivo financeiro cadastrado.</div>"
+      +"<div style='font-size:12px;color:#9ca3af'>Cadastre um objetivo para transformar seus investimentos em planos reais.</div>";
+    objCard.appendChild(emO);
   }
   c.appendChild(objCard);
 
@@ -2499,6 +2606,457 @@ function rInvest(c){
     });
     hCard.appendChild(list);c.appendChild(hCard);
   }
+}
+
+// ── Sprint 3: fluxo financeiro de investimentos (aporte/resgate) ─────────────
+// Lógica centralizada aqui — as telas PF/PJ só coletam os dados e chamam estas funções,
+// para garantir que a matemática nunca diverja entre os dois ambientes.
+function invEnvAccounts(isPJ){
+  var ctx=isPJ?"pj":"pf";
+  return(D.accounts||[]).filter(function(a){return(a.ctx===ctx||a.ctx==="both")&&a.type!=="investimento"});
+}
+function hasInvMovs(investId){
+  return(D.invMovs||[]).some(function(m){return String(m.investimentoId)===String(investId)});
+}
+function execAporte(isPJ,investArr,idx,contaId,valor,data,obs){
+  var rec=investArr[idx];if(!rec)return;
+  var valorAtualAntes=(rec.valorAtual!==undefined)?rec.valorAtual:(rec.valorInicial||0);
+  var mov={id:Date.now(),ambiente:isPJ?"pj":"pf",tipo:"APORTE_INVESTIMENTO",data:data,valor:valor,
+    contaOrigemId:contaId,contaDestinoId:"",investimentoId:rec.id,
+    capital:valor,rendimento:0,imposto:0,taxa:0,valorLiquido:valor,
+    observacao:obs||"",status:"concluido",createdAt:new Date().toISOString(),refId:rec.id};
+  D.invMovs=D.invMovs||[];D.invMovs.push(mov);
+  rec.valorInicial=(rec.valorInicial||0)+valor;
+  rec.valorAtual=valorAtualAntes+valor;
+  sv();
+}
+function execResgate(isPJ,investArr,idx,contaId,capital,rendimento,imposto,taxa,data,obs){
+  var rec=investArr[idx];if(!rec)return;
+  var valorAtualAntes=(rec.valorAtual!==undefined)?rec.valorAtual:(rec.valorInicial||0);
+  var valorLiquido=capital+rendimento-imposto-taxa;
+  var mov={id:Date.now(),ambiente:isPJ?"pj":"pf",tipo:"RESGATE_INVESTIMENTO",data:data,valor:capital+rendimento,
+    contaOrigemId:"",contaDestinoId:contaId,investimentoId:rec.id,
+    capital:capital,rendimento:rendimento,imposto:imposto,taxa:taxa,valorLiquido:valorLiquido,
+    observacao:obs||"",status:"concluido",createdAt:new Date().toISOString(),refId:rec.id};
+  D.invMovs=D.invMovs||[];D.invMovs.push(mov);
+  rec.valorInicial=Math.max(0,(rec.valorInicial||0)-capital);
+  rec.valorAtual=Math.max(0,valorAtualAntes-(capital+rendimento));
+  sv();
+}
+function linkInitialValue(isPJ,investArr,idx,contaId){
+  var rec=investArr[idx];if(!rec)return;
+  var valor=rec.valorInicial||0;
+  var mov={id:Date.now(),ambiente:isPJ?"pj":"pf",tipo:"APORTE_INVESTIMENTO",data:rec.dataAplicacao||tod(),valor:valor,
+    contaOrigemId:contaId,contaDestinoId:"",investimentoId:rec.id,
+    capital:valor,rendimento:0,imposto:0,taxa:0,valorLiquido:valor,
+    observacao:"Vínculo do valor inicial cadastrado",status:"concluido",createdAt:new Date().toISOString(),refId:rec.id};
+  D.invMovs=D.invMovs||[];D.invMovs.push(mov);
+  sv();
+}
+
+// ── Sprint 4: edição/exclusão de aporte e resgate ─────────────────────────────
+// Estratégia adotada (documentada no relatório): reversão pontual do efeito específico
+// do movimento, com verificação de segurança que BLOQUEIA a operação (em vez de
+// recalcular tudo do zero) se a reversão levaria o investimento ou a conta a um estado
+// negativo — sinal de que movimentações posteriores já dependem deste registro.
+// Isso segue exatamente a permissão do item 8: "se o sistema não suportar recálculo
+// histórico seguro, bloquear a edição e informar."
+function findInvById(id,ambiente){
+  var arr=ambiente==="pj"?D.pjInvestments:D.investments;
+  var idx=(arr||[]).findIndex(function(r){return String(r.id)===String(id)});
+  return {arr:arr,idx:idx,rec:idx>=0?arr[idx]:null};
+}
+function findMov(movId){
+  return (D.invMovs||[]).find(function(m){return String(m.id)===String(movId)&&m.status==="concluido"});
+}
+
+function excluirAporte(movId){
+  var mov=findMov(movId);
+  if(!mov||mov.tipo!=="APORTE_INVESTIMENTO"){alert("Movimentação não encontrada ou já estornada.");return}
+  var f=findInvById(mov.investimentoId,mov.ambiente);
+  if(!f.rec){alert("Investimento relacionado não encontrado.");return}
+  var novoCapital=(f.rec.valorInicial||0)-mov.capital;
+  var novoAtual=(f.rec.valorAtual!==undefined?f.rec.valorAtual:(f.rec.valorInicial||0))-mov.valor;
+  if(novoCapital<-0.005||novoAtual<-0.005){
+    alert("Este aporte não pode ser excluído porque existem movimentações posteriores que dependem dele.");
+    return;
+  }
+  if(!confirm("Tem certeza de que deseja excluir este aporte? O valor será devolvido para a conta de origem."))return;
+  f.rec.valorInicial=Math.max(0,novoCapital);
+  f.rec.valorAtual=Math.max(0,novoAtual);
+  mov.status="estornada";mov.estornadoEm=new Date().toISOString();
+  sv();
+  alert("Este aporte foi estornado e os saldos foram recalculados.");
+  nav("invest");
+}
+
+function excluirResgate(movId){
+  var mov=findMov(movId);
+  if(!mov||mov.tipo!=="RESGATE_INVESTIMENTO"){alert("Movimentação não encontrada ou já estornada.");return}
+  var f=findInvById(mov.investimentoId,mov.ambiente);
+  if(!f.rec){alert("Investimento relacionado não encontrado.");return}
+  var saldoConta=accBal(mov.contaDestinoId);
+  if(saldoConta-mov.valorLiquido<-0.005){
+    alert("Não foi possível excluir esta movimentação porque a conta de destino não possui saldo suficiente para a reversão.");
+    return;
+  }
+  if(!confirm("Tem certeza de que deseja excluir este resgate? O capital e o rendimento retornarão ao investimento."))return;
+  f.rec.valorInicial=(f.rec.valorInicial||0)+mov.capital;
+  f.rec.valorAtual=(f.rec.valorAtual!==undefined?f.rec.valorAtual:(f.rec.valorInicial||0))+(mov.capital+mov.rendimento);
+  mov.status="estornada";mov.estornadoEm=new Date().toISOString();
+  sv();
+  alert("Este resgate foi estornado e os saldos foram recalculados.");
+  nav("invest");
+}
+
+function editarAporte(movId){
+  var mov=findMov(movId);
+  if(!mov||mov.tipo!=="APORTE_INVESTIMENTO"){alert("Movimentação não encontrada ou já estornada.");return}
+  var isPJ=mov.ambiente==="pj";
+  var f=findInvById(mov.investimentoId,mov.ambiente);
+  if(!f.rec){alert("Investimento relacionado não encontrado.");return}
+  var bd=gi("m2b");bd.innerHTML="";
+  var tt=ce("div","mt");tt.textContent="Editar aporte";bd.appendChild(tt);
+  var accs=invEnvAccounts(isPJ);
+  function lbl(t){var l=ce("label","lbl");l.textContent=t;return l}
+  bd.appendChild(lbl("Conta de origem *"));
+  var accSel=ce("select","inp sel");
+  accs.forEach(function(a){var op=ce("option");op.value=a.id;op.textContent=a.name+" — "+(a.bank||"");if(String(a.id)===String(mov.contaOrigemId))op.selected=true;accSel.appendChild(op)});
+  bd.appendChild(accSel);
+  bd.appendChild(lbl("Valor do aporte (R$) *"));
+  var valInp=ce("input","inp");valInp.type="number";valInp.value=mov.valor;valInp.style.marginBottom="8px";bd.appendChild(valInp);
+  bd.appendChild(lbl("Data *"));var dtInp=ce("input","inp");dtInp.type="date";dtInp.value=mov.data;dtInp.style.marginBottom="8px";bd.appendChild(dtInp);
+  bd.appendChild(lbl("Observação"));var obsInp=ce("textarea","inp");obsInp.rows=2;obsInp.value=mov.observacao||"";obsInp.style.marginBottom="8px";bd.appendChild(obsInp);
+  var brow=ce("div","brow");
+  var cancel=ce("button","btn bou");cancel.textContent="Cancelar";cancel.onclick=function(){oM(false,"m2")};
+  var save=ce("button",isPJ?"btn bpj":"btn bpf");save.textContent="Salvar edição";
+  var _busy=false;
+  function unlock(){_busy=false;save.disabled=false;save.textContent="Salvar edição"}
+  save.onclick=function(){
+    if(_busy)return;_busy=true;save.disabled=true;save.textContent="Salvando...";
+    var novaConta=accSel.value,novoValor=parseFloat(valInp.value)||0,novaData=dtInp.value,novaObs=obsInp.value.trim();
+    if(!novaConta||!novoValor||novoValor<=0||!novaData){alert("Preencha todos os campos obrigatórios.");unlock();return}
+    var capitalRevertido=(f.rec.valorInicial||0)-mov.capital;
+    var atualRevertido=(f.rec.valorAtual!==undefined?f.rec.valorAtual:(f.rec.valorInicial||0))-mov.valor;
+    if(capitalRevertido<-0.005||atualRevertido<-0.005){
+      alert("Este aporte não pode ser editado porque existem movimentações posteriores que dependem dele.");
+      unlock();return;
+    }
+    var saldoNovaConta=accBal(novaConta);
+    if(String(novaConta)===String(mov.contaOrigemId))saldoNovaConta+=mov.valor;
+    if(novoValor>saldoNovaConta){alert("Saldo insuficiente nesta conta para o novo valor do aporte.");unlock();return}
+    f.rec.valorInicial=capitalRevertido+novoValor;
+    f.rec.valorAtual=atualRevertido+novoValor;
+    mov._original=mov._original||{valor:mov.valor,contaOrigemId:mov.contaOrigemId,data:mov.data,observacao:mov.observacao};
+    mov.valor=novoValor;mov.capital=novoValor;mov.valorLiquido=novoValor;
+    mov.contaOrigemId=novaConta;mov.data=novaData;mov.observacao=novaObs;
+    mov.updatedAt=new Date().toISOString();
+    sv();oM(false,"m2");
+    alert("Este aporte foi atualizado com sucesso.");
+    nav("invest");
+  };
+  brow.appendChild(cancel);brow.appendChild(save);bd.appendChild(brow);oM(true,"m2");
+}
+
+function editarResgate(movId){
+  var mov=findMov(movId);
+  if(!mov||mov.tipo!=="RESGATE_INVESTIMENTO"){alert("Movimentação não encontrada ou já estornada.");return}
+  var isPJ=mov.ambiente==="pj";
+  var f=findInvById(mov.investimentoId,mov.ambiente);
+  if(!f.rec){alert("Investimento relacionado não encontrado.");return}
+  var bd=gi("m2b");bd.innerHTML="";
+  var tt=ce("div","mt");tt.textContent="Editar resgate";bd.appendChild(tt);
+  var accs=invEnvAccounts(isPJ);
+  function lbl(t){var l=ce("label","lbl");l.textContent=t;return l}
+  bd.appendChild(lbl("Capital resgatado (R$) *"));var capInp=ce("input","inp");capInp.type="number";capInp.value=mov.capital;capInp.style.marginBottom="8px";bd.appendChild(capInp);
+  bd.appendChild(lbl("Rendimento bruto (R$)"));var rendInp=ce("input","inp");rendInp.type="number";rendInp.value=mov.rendimento;rendInp.style.marginBottom="8px";bd.appendChild(rendInp);
+  bd.appendChild(lbl("Imposto (R$)"));var impInp=ce("input","inp");impInp.type="number";impInp.value=mov.imposto;impInp.style.marginBottom="8px";bd.appendChild(impInp);
+  bd.appendChild(lbl("Taxa (R$)"));var taxInp=ce("input","inp");taxInp.type="number";taxInp.value=mov.taxa;taxInp.style.marginBottom="8px";bd.appendChild(taxInp);
+  var liqBox=ce("div");liqBox.style.cssText="font-size:12px;background:#f9fafb;border-radius:8px;padding:8px 10px;margin-bottom:10px";bd.appendChild(liqBox);
+  function refreshLiq(){var cap=parseFloat(capInp.value)||0,rend=parseFloat(rendInp.value)||0,imp=parseFloat(impInp.value)||0,tax=parseFloat(taxInp.value)||0;var liq=cap+rend-imp-tax;liqBox.innerHTML="Valor líquido: <b style='color:"+(liq<0?"#dc2626":"#059669")+"'>"+R(liq)+"</b>"}
+  [capInp,rendInp,impInp,taxInp].forEach(function(i){i.oninput=refreshLiq});refreshLiq();
+  bd.appendChild(lbl("Conta de destino *"));
+  var accSel=ce("select","inp sel");accs.forEach(function(a){var op=ce("option");op.value=a.id;op.textContent=a.name+" — "+(a.bank||"");if(String(a.id)===String(mov.contaDestinoId))op.selected=true;accSel.appendChild(op)});
+  bd.appendChild(accSel);
+  bd.appendChild(lbl("Data *"));var dtInp=ce("input","inp");dtInp.type="date";dtInp.value=mov.data;dtInp.style.marginBottom="8px";bd.appendChild(dtInp);
+  bd.appendChild(lbl("Observação"));var obsInp=ce("textarea","inp");obsInp.rows=2;obsInp.value=mov.observacao||"";obsInp.style.marginBottom="8px";bd.appendChild(obsInp);
+  var brow=ce("div","brow");
+  var cancel=ce("button","btn bou");cancel.textContent="Cancelar";cancel.onclick=function(){oM(false,"m2")};
+  var save=ce("button",isPJ?"btn bpj":"btn bpf");save.textContent="Salvar edição";
+  var _busy=false;
+  function unlock(){_busy=false;save.disabled=false;save.textContent="Salvar edição"}
+  save.onclick=function(){
+    if(_busy)return;_busy=true;save.disabled=true;save.textContent="Salvando...";
+    var cap=parseFloat(capInp.value)||0,rend=parseFloat(rendInp.value)||0,imp=parseFloat(impInp.value)||0,tax=parseFloat(taxInp.value)||0;
+    var novaConta=accSel.value,novaData=dtInp.value,novaObs=obsInp.value.trim();
+    var liq=cap+rend-imp-tax;
+    if(cap<0||rend<0||imp<0||tax<0){alert("Valores não podem ser negativos.");unlock();return}
+    if(liq<0){alert("O valor líquido não pode ser negativo.");unlock();return}
+    if(!novaConta||!novaData){alert("Preencha todos os campos obrigatórios.");unlock();return}
+    var saldoContaAntiga=accBal(mov.contaDestinoId)-mov.valorLiquido;
+    if(saldoContaAntiga<-0.005){
+      alert("Este resgate não pode ser editado porque a conta de destino não possui saldo suficiente para a reversão.");
+      unlock();return;
+    }
+    var capitalRevertido=(f.rec.valorInicial||0)+mov.capital;
+    var atualRevertido=(f.rec.valorAtual!==undefined?f.rec.valorAtual:(f.rec.valorInicial||0))+(mov.capital+mov.rendimento);
+    if(cap+rend>atualRevertido+0.005){
+      alert("O resgate não pode ser maior que o saldo disponível no investimento.");
+      unlock();return;
+    }
+    f.rec.valorInicial=Math.max(0,capitalRevertido-cap);
+    f.rec.valorAtual=Math.max(0,atualRevertido-(cap+rend));
+    mov._original=mov._original||{capital:mov.capital,rendimento:mov.rendimento,imposto:mov.imposto,taxa:mov.taxa,valorLiquido:mov.valorLiquido,contaDestinoId:mov.contaDestinoId,data:mov.data,observacao:mov.observacao};
+    mov.capital=cap;mov.rendimento=rend;mov.imposto=imp;mov.taxa=tax;mov.valorLiquido=liq;mov.valor=cap+rend;
+    mov.contaDestinoId=novaConta;mov.data=novaData;mov.observacao=novaObs;
+    mov.updatedAt=new Date().toISOString();
+    sv();oM(false,"m2");
+    alert("Este resgate foi atualizado com sucesso.");
+    nav("invest");
+  };
+  brow.appendChild(cancel);brow.appendChild(save);bd.appendChild(brow);oM(true,"m2");
+}
+
+// ── Histórico unificado do investimento (aportes/resgates/atualizações/correções) ──
+function verHistoricoInvestimento(idx,isPJ){
+  var rec=(isPJ?D.pjInvestments:D.investments)[idx];if(!rec)return;
+  var bd=gi("m2b");bd.innerHTML="";
+  var tt=ce("div","mt");tt.textContent="Histórico · "+rec.nome;bd.appendChild(tt);
+  var movs=(D.invMovs||[]).filter(function(m){return String(m.investimentoId)===String(rec.id)});
+  var hist=(rec.historico||[]).map(function(h){var h2={};for(var k in h)h2[k]=h[k];h2._isHistorico=true;return h2});
+  var all=movs.concat(hist).sort(function(a,b){
+    var da=(a.createdAt||a.data||"");var db2=(b.createdAt||b.data||"");
+    return db2.localeCompare(da);
+  });
+  function contaNome(id){var a=(D.accounts||[]).find(function(x){return String(x.id)===String(id)});return a?a.name:"—"}
+  if(!all.length){
+    var e=ce("div");e.style.cssText="text-align:center;padding:20px;color:#9ca3af;font-size:12px";e.textContent="Nenhuma movimentação registrada ainda.";bd.appendChild(e);
+  }
+  all.forEach(function(item){
+    var box=ce("div");box.style.cssText="background:#fafafe;border-radius:10px;padding:10px 12px;margin-bottom:8px;border:1px solid #eaf0e8";
+    if(item._isHistorico){
+      var isAtual=item.tipo==="atualizacao_valor";
+      var label=isAtual?"Atualização manual":"Correção cadastral";
+      var corLabel=isAtual?"#0284c7":"#9333ea";
+      var detalhe="De "+R(item.valorAnterior)+" para "+R(item.valorNovo)+(item.observacao?" · "+item.observacao:"");
+      box.innerHTML="<div style='display:flex;justify-content:space-between'><b style='font-size:12px;color:"+corLabel+"'>"+label+"</b><span style='font-size:11px;color:#9ca3af'>"+(item.data||"")+"</span></div>"
+        +"<div style='font-size:11px;color:#6b7280;margin-top:3px'>"+detalhe+"</div>";
+    } else {
+      var isAporte=item.tipo==="APORTE_INVESTIMENTO";
+      var estornado=item.status==="estornada";
+      var label2=isAporte?"Aporte":"Resgate";var corLabel2=isAporte?"#059669":"#c2410c";
+      var detalhe2=isAporte
+        ?("R$ "+R(item.valor)+" — "+contaNome(item.contaOrigemId)+" → "+rec.nome)
+        :("Líquido R$ "+R(item.valorLiquido)+" — "+rec.nome+" → "+contaNome(item.contaDestinoId)+" (capital "+R(item.capital)+", rend. "+R(item.rendimento)+", imp. "+R(item.imposto)+", taxa "+R(item.taxa)+")");
+      box.innerHTML="<div style='display:flex;justify-content:space-between'><b style='font-size:12px;color:"+corLabel2+(estornado?";text-decoration:line-through;opacity:.6":"")+"'>"+label2+(estornado?" (estornado)":"")+"</b><span style='font-size:11px;color:#9ca3af'>"+(item.data||"")+"</span></div>"
+        +"<div style='font-size:11px;color:#6b7280;margin-top:3px'>"+detalhe2+(item.observacao?" · "+item.observacao:"")+"</div>";
+      if(!estornado){
+        var actRow=ce("div");actRow.style.cssText="display:flex;gap:6px;margin-top:6px";
+        var eB=ce("button");eB.style.cssText="font-size:10.5px;padding:4px 8px;border-radius:6px;border:1px solid #d1d5db;background:#fff;cursor:pointer";eB.textContent="✏️ Editar";
+        var dB=ce("button");dB.style.cssText="font-size:10.5px;padding:4px 8px;border-radius:6px;border:1px solid #fecaca;background:#fff;color:#dc2626;cursor:pointer";dB.textContent="🗑 Excluir";
+        (function(mid){
+          eB.onclick=function(){isAporte?editarAporte(mid):editarResgate(mid)};
+          dB.onclick=function(){isAporte?excluirAporte(mid):excluirResgate(mid)};
+        })(item.id);
+        actRow.appendChild(eB);actRow.appendChild(dB);box.appendChild(actRow);
+      }
+    }
+    bd.appendChild(box);
+  });
+  var brow=ce("div","brow");
+  var close=ce("button","btn bou");close.style.flex="1";close.textContent="Fechar";close.onclick=function(){oM(false,"m2")};
+  brow.appendChild(close);bd.appendChild(brow);
+  oM(true,"m2");
+}
+
+// ── Verificação de consistência (item 13) — não corrige automaticamente, só alerta ──
+function verificarConsistencia(){
+  var problemas=[];
+  [{arr:D.investments,amb:"pf"},{arr:D.pjInvestments,amb:"pj"}].forEach(function(g){
+    (g.arr||[]).forEach(function(rec){
+      if((rec.valorInicial||0)<-0.01)problemas.push(rec.nome+": capital aplicado ficou negativo");
+      if(rec.valorAtual!==undefined&&rec.valorAtual<-0.01)problemas.push(rec.nome+": valor atual ficou negativo");
+    });
+  });
+  (D.invMovs||[]).forEach(function(m){
+    if(m.status!=="concluido")return;
+    var arr=m.ambiente==="pj"?D.pjInvestments:D.investments;
+    var rec=(arr||[]).find(function(r){return String(r.id)===String(m.investimentoId)});
+    if(!rec)problemas.push("Movimentação #"+m.id+" referencia um investimento que não existe mais");
+    var accId=m.tipo==="APORTE_INVESTIMENTO"?m.contaOrigemId:m.contaDestinoId;
+    var acc=(D.accounts||[]).find(function(a){return String(a.id)===String(accId)});
+    if(!acc)problemas.push("Movimentação #"+m.id+" referencia uma conta que não existe mais");
+    if(m.tipo==="RESGATE_INVESTIMENTO"){
+      var liqCalc=(m.capital||0)+(m.rendimento||0)-(m.imposto||0)-(m.taxa||0);
+      if(Math.abs(liqCalc-(m.valorLiquido||0))>0.01)problemas.push("Movimentação #"+m.id+": valor líquido não bate com capital+rendimento-imposto-taxa");
+    }
+  });
+  if(problemas.length)alert("⚠️ Inconsistências encontradas:\n\n"+problemas.join("\n"));
+  else alert("✅ Nenhuma inconsistência encontrada.");
+}
+
+function oAportarInvestimento(idx,inv){oAporteForm(false,idx,inv)}
+function oAportarInvestimentoPJ(idx,inv){oAporteForm(true,idx,inv)}
+function oAporteForm(isPJ,idx,inv){
+  var bd=gi("m2b");bd.innerHTML="";
+  var tt=ce("div","mt");tt.textContent="Aportar · "+inv.nome;bd.appendChild(tt);
+  var accs=invEnvAccounts(isPJ);
+  if(!accs.length){
+    var w=ce("div");w.style.cssText="text-align:center;padding:20px;color:#9ca3af;font-size:12px";
+    w.textContent="Cadastre uma conta "+(isPJ?"empresarial":"pessoal")+" antes de fazer um aporte.";
+    bd.appendChild(w);
+    var bc0=ce("button","btn bou");bc0.textContent="Fechar";bc0.onclick=function(){oM(false,"m2")};bd.appendChild(bc0);
+    oM(true,"m2");return;
+  }
+  function lbl(txt){var l=ce("label","lbl");l.textContent=txt;return l}
+  bd.appendChild(lbl("Conta de origem *"));
+  var accSel=ce("select","inp sel");accSel.id="ap-conta";
+  accs.forEach(function(a){var op=ce("option");op.value=a.id;op.textContent=a.name+" — "+(a.bank||"");accSel.appendChild(op)});
+  bd.appendChild(accSel);
+  var saldoBox=ce("div");saldoBox.style.cssText="font-size:11px;color:#6b7280;background:#f9fafb;border-radius:8px;padding:8px 10px;margin-bottom:10px";
+  bd.appendChild(saldoBox);
+  bd.appendChild(lbl("Valor do aporte (R$) *"));
+  var valInp=ce("input","inp");valInp.type="number";valInp.style.marginBottom="8px";bd.appendChild(valInp);
+  bd.appendChild(lbl("Data *"));var dtInp=ce("input","inp");dtInp.type="date";dtInp.value=tod();dtInp.style.marginBottom="8px";bd.appendChild(dtInp);
+  bd.appendChild(lbl("Observação (opcional)"));var obsInp=ce("textarea","inp");obsInp.rows=2;obsInp.style.marginBottom="8px";bd.appendChild(obsInp);
+  function refreshSaldo(){
+    var saldo=accBal(accSel.value);
+    var v=parseFloat(valInp.value)||0;
+    saldoBox.innerHTML="Saldo atual: <b>"+R(saldo)+"</b><br>Saldo após o aporte: <b style='color:"+(saldo-v<0?"#dc2626":"#059669")+"'>"+R(saldo-v)+"</b>";
+  }
+  accSel.onchange=refreshSaldo;valInp.oninput=refreshSaldo;refreshSaldo();
+  var brow=ce("div","brow");
+  var cancel=ce("button","btn bou");cancel.textContent="Cancelar";cancel.onclick=function(){oM(false,"m2")};
+  var save=ce("button",isPJ?"btn bpj":"btn bpf");save.textContent="Confirmar aporte";
+  var _busyAp=false;
+  save.onclick=function(){
+    if(_busyAp)return;_busyAp=true;save.disabled=true;save.textContent="Processando...";
+    function unlock(){_busyAp=false;save.disabled=false;save.textContent="Confirmar aporte"}
+    var contaId=accSel.value;var valor=parseFloat(valInp.value)||0;var data=dtInp.value;
+    if(!contaId){alert("Selecione a conta de origem.");unlock();return}
+    if(!valor||valor<=0){alert("Informe um valor maior que zero.");unlock();return}
+    if(!data){alert("Informe uma data válida.");unlock();return}
+    var saldo=accBal(contaId);
+    if(valor>saldo){alert("Saldo insuficiente nesta conta para realizar o aporte.");unlock();return}
+    execAporte(isPJ,isPJ?D.pjInvestments:D.investments,idx,contaId,valor,data,obsInp.value.trim());
+    oM(false,"m2");nav("invest");
+  };
+  brow.appendChild(cancel);brow.appendChild(save);bd.appendChild(brow);oM(true,"m2");
+}
+
+function oResgatarInvestimento(idx,inv){oResgateForm(false,idx,inv)}
+function oResgatarInvestimentoPJ(idx,inv){oResgateForm(true,idx,inv)}
+function oResgateForm(isPJ,idx,inv){
+  var bd=gi("m2b");bd.innerHTML="";
+  var tt=ce("div","mt");tt.textContent="Resgatar · "+inv.nome;bd.appendChild(tt);
+  var accs=invEnvAccounts(isPJ);
+  if(!accs.length){
+    var w=ce("div");w.style.cssText="text-align:center;padding:20px;color:#9ca3af;font-size:12px";
+    w.textContent="Cadastre uma conta "+(isPJ?"empresarial":"pessoal")+" antes de resgatar.";
+    bd.appendChild(w);
+    var bc0=ce("button","btn bou");bc0.textContent="Fechar";bc0.onclick=function(){oM(false,"m2")};bd.appendChild(bc0);
+    oM(true,"m2");return;
+  }
+  var saldoDisponivel=(inv.valorAtual!==undefined)?inv.valorAtual:(inv.valorInicial||0);
+  var av=ce("div");av.style.cssText="font-size:12px;color:var(--tx);background:#f0f9ff;border-radius:8px;padding:8px 10px;margin-bottom:10px";
+  av.innerHTML="Valor disponível no investimento: <b>"+R(saldoDisponivel)+"</b>";
+  bd.appendChild(av);
+
+  function lbl(txt){var l=ce("label","lbl");l.textContent=txt;return l}
+  var _tipoResg="parcial";
+  var typeSel=ce("div");typeSel.style.cssText="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px";
+  ["parcial","total"].forEach(function(t){
+    var tb=ce("button");tb.id="rg-tipo-"+t;
+    tb.style.cssText="padding:8px;border-radius:9px;border:2px solid "+(t==="parcial"?(isPJ?"#C4693A":"#4A6741"):"var(--bd)")+";background:"+(t==="parcial"?(isPJ?"#faeae0":"#eaf0e8"):"transparent")+";font-size:12px;font-weight:600;cursor:pointer;color:var(--tx)";
+    tb.textContent=t==="parcial"?"Resgate parcial":"Resgate total";
+    tb.onclick=function(){
+      _tipoResg=t;
+      ["parcial","total"].forEach(function(x){
+        var b=gi("rg-tipo-"+x);
+        b.style.border="2px solid "+(x===_tipoResg?(isPJ?"#C4693A":"#4A6741"):"var(--bd)");
+        b.style.background=x===_tipoResg?(isPJ?"#faeae0":"#eaf0e8"):"transparent";
+      });
+      if(_tipoResg==="total"){
+        capInp.value=(inv.valorInicial||0).toFixed(2);
+        rendInp.value=Math.max(0,saldoDisponivel-(inv.valorInicial||0)).toFixed(2);
+        refreshLiquido();
+      }
+    };
+    typeSel.appendChild(tb);
+  });
+  bd.appendChild(typeSel);
+
+  bd.appendChild(lbl("Capital resgatado (R$) *"));var capInp=ce("input","inp");capInp.type="number";capInp.value="0";capInp.style.marginBottom="8px";bd.appendChild(capInp);
+  bd.appendChild(lbl("Rendimento bruto (R$)"));var rendInp=ce("input","inp");rendInp.type="number";rendInp.value="0";rendInp.style.marginBottom="8px";bd.appendChild(rendInp);
+  bd.appendChild(lbl("Imposto (R$)"));var impInp=ce("input","inp");impInp.type="number";impInp.value="0";impInp.style.marginBottom="8px";bd.appendChild(impInp);
+  bd.appendChild(lbl("Taxa (R$)"));var taxInp=ce("input","inp");taxInp.type="number";taxInp.value="0";taxInp.style.marginBottom="8px";bd.appendChild(taxInp);
+  var liqBox=ce("div");liqBox.style.cssText="font-size:12px;background:#f9fafb;border-radius:8px;padding:8px 10px;margin-bottom:10px";
+  bd.appendChild(liqBox);
+  function refreshLiquido(){
+    var cap=parseFloat(capInp.value)||0,rend=parseFloat(rendInp.value)||0,imp=parseFloat(impInp.value)||0,tax=parseFloat(taxInp.value)||0;
+    var liq=cap+rend-imp-tax;
+    var permanece=Math.max(0,saldoDisponivel-(cap+rend));
+    liqBox.innerHTML="Valor líquido para a conta: <b style='color:"+(liq<0?"#dc2626":"#059669")+"'>"+R(liq)+"</b><br>Permanece investido: <b>"+R(permanece)+"</b>";
+  }
+  [capInp,rendInp,impInp,taxInp].forEach(function(i){i.oninput=refreshLiquido});
+  refreshLiquido();
+
+  bd.appendChild(lbl("Conta de destino *"));
+  var accSel=ce("select","inp sel");accSel.id="rg-conta";
+  accs.forEach(function(a){var op=ce("option");op.value=a.id;op.textContent=a.name+" — "+(a.bank||"");accSel.appendChild(op)});
+  bd.appendChild(accSel);
+  bd.appendChild(lbl("Data *"));var dtInp=ce("input","inp");dtInp.type="date";dtInp.value=tod();dtInp.style.marginBottom="8px";bd.appendChild(dtInp);
+  bd.appendChild(lbl("Observação (opcional)"));var obsInp=ce("textarea","inp");obsInp.rows=2;obsInp.style.marginBottom="8px";bd.appendChild(obsInp);
+
+  var brow=ce("div","brow");
+  var cancel=ce("button","btn bou");cancel.textContent="Cancelar";cancel.onclick=function(){oM(false,"m2")};
+  var save=ce("button",isPJ?"btn bpj":"btn bpf");save.textContent="Confirmar resgate";
+  var _busyRg=false;
+  save.onclick=function(){
+    if(_busyRg)return;_busyRg=true;save.disabled=true;save.textContent="Processando...";
+    function unlock(){_busyRg=false;save.disabled=false;save.textContent="Confirmar resgate"}
+    var cap=parseFloat(capInp.value)||0,rend=parseFloat(rendInp.value)||0,imp=parseFloat(impInp.value)||0,tax=parseFloat(taxInp.value)||0;
+    var contaId=accSel.value;var data=dtInp.value;
+    if(cap<0||rend<0||imp<0||tax<0){alert("Valores não podem ser negativos.");unlock();return}
+    if(cap+rend<=0){alert("Informe o capital ou rendimento a resgatar.");unlock();return}
+    if(cap+rend>saldoDisponivel+0.005){alert("O resgate não pode ser maior que o saldo disponível no investimento.");unlock();return}
+    var liq=cap+rend-imp-tax;
+    if(liq<0){alert("O valor líquido do resgate não pode ser negativo. Revise imposto e taxa.");unlock();return}
+    if(!contaId){alert("Selecione a conta de destino.");unlock();return}
+    if(!data){alert("Informe uma data válida.");unlock();return}
+    execResgate(isPJ,isPJ?D.pjInvestments:D.investments,idx,contaId,cap,rend,imp,tax,data,obsInp.value.trim());
+    oM(false,"m2");nav("invest");
+  };
+  brow.appendChild(cancel);brow.appendChild(save);bd.appendChild(brow);oM(true,"m2");
+}
+
+function oVincularValorInicial(idx,inv){oVincularForm(false,idx,inv)}
+function oVincularValorInicialPJ(idx,inv){oVincularForm(true,idx,inv)}
+function oVincularForm(isPJ,idx,inv){
+  var bd=gi("m2b");bd.innerHTML="";
+  var tt=ce("div","mt");tt.textContent="Vincular valor inicial";bd.appendChild(tt);
+  var accs=invEnvAccounts(isPJ);
+  if(!accs.length){
+    var w=ce("div");w.style.cssText="text-align:center;padding:20px;color:#9ca3af;font-size:12px";
+    w.textContent="Cadastre uma conta "+(isPJ?"empresarial":"pessoal")+" para vincular.";
+    bd.appendChild(w);
+    var bc0=ce("button","btn bou");bc0.textContent="Fechar";bc0.onclick=function(){oM(false,"m2")};bd.appendChild(bc0);
+    oM(true,"m2");return;
+  }
+  var note=ce("div");note.style.cssText="font-size:11.5px;color:#6b7280;background:#f9fafb;border-radius:8px;padding:10px;margin-bottom:12px";
+  note.textContent="Deseja vincular o valor inicial ("+R(inv.valorInicial||0)+") a uma conta de origem? Isso vai debitar o valor da conta escolhida, sem alterar o valor já cadastrado do investimento.";
+  bd.appendChild(note);
+  var lbl2=ce("label","lbl");lbl2.textContent="Conta de origem";bd.appendChild(lbl2);
+  var accSel=ce("select","inp sel");accs.forEach(function(a){var op=ce("option");op.value=a.id;op.textContent=a.name+" — "+(a.bank||"");accSel.appendChild(op)});
+  bd.appendChild(accSel);
+  var brow=ce("div","brow");
+  var cancel=ce("button","btn bou");cancel.textContent="Cancelar";cancel.onclick=function(){oM(false,"m2")};
+  var save=ce("button",isPJ?"btn bpj":"btn bpf");save.textContent="Vincular";
+  save.onclick=function(){
+    linkInitialValue(isPJ,isPJ?D.pjInvestments:D.investments,idx,accSel.value);
+    oM(false,"m2");nav("invest");
+  };
+  brow.appendChild(cancel);brow.appendChild(save);bd.appendChild(brow);oM(true,"m2");
 }
 
 // ── Modal: Novo Investimento ─────────────────────────────────────────────────
@@ -2528,9 +3086,9 @@ function oAddInvestimento(){
 
   var formArea=ce("div");formArea.id="inv-form";bd.appendChild(formArea);
 
-  function inp(id,placeholder,type){
+  function inp(id,placeholder,type,val){
     type=type||"text";
-    var i=ce("input","inp");i.id=id;i.placeholder=placeholder;i.type=type;
+    var i=ce("input","inp");i.id=id;i.placeholder=placeholder;i.type=type;if(val!==undefined)i.value=val;
     i.style.marginBottom="8px";return i;
   }
   function lbl(txt){var l=ce("label","lbl");l.textContent=txt;return l}
@@ -2539,34 +3097,68 @@ function oAddInvestimento(){
     opts.forEach(function(o){var op=ce("option");op.value=o.v;op.textContent=o.l;s.appendChild(op)});
     return s;
   }
+  function objOptions(){
+    var objs=D.objectives||[];
+    if(!objs.length)return[{v:"",l:"Nenhum objetivo financeiro disponível."}];
+    return[{v:"",l:"Nenhum"}].concat(objs.map(function(o){return{v:o.id,l:o.icon+" "+o.name}}));
+  }
+  function originNote(){
+    var n=ce("div");n.style.cssText="font-size:10.5px;color:#6b7280;background:#f9fafb;border-radius:8px;padding:8px 10px;margin:4px 0 10px";
+    n.textContent="💡 O vínculo com a conta de origem será configurado na etapa de aporte.";
+    return n;
+  }
 
   function renderForm(){
     formArea.innerHTML="";
     if(_tipo==="fixo"){
-      formArea.appendChild(lbl("Nome do investimento"));formArea.appendChild(inp("ii-nome","Ex: CDB Nubank 13% a.a."));
-      formArea.appendChild(lbl("Instituição"));formArea.appendChild(inp("ii-inst","Ex: Nubank, XP, Itaú"));
-      formArea.appendChild(lbl("Valor inicial (R$)"));formArea.appendChild(inp("ii-val","0,00","number"));
-      formArea.appendChild(lbl("Data da aplicação"));formArea.appendChild(inp("ii-data","","date"));
+      formArea.appendChild(lbl("Nome do investimento *"));formArea.appendChild(inp("ii-nome","Ex: CDB Nubank 13% a.a."));
+      formArea.appendChild(lbl("Modalidade"));
+      formArea.appendChild(sel("ii-modal",[{v:"cdb",l:"CDB"},{v:"rdb",l:"RDB"},{v:"lci",l:"LCI"},{v:"lca",l:"LCA"},{v:"tesouro",l:"Tesouro Direto"},{v:"debenture",l:"Debênture"},{v:"poupanca",l:"Poupança"},{v:"fundo_rf",l:"Fundo de renda fixa"},{v:"outro",l:"Outro"}]));
+      formArea.appendChild(lbl("Instituição *"));formArea.appendChild(inp("ii-inst","Ex: Nubank, XP, Itaú"));
+      formArea.appendChild(originNote());
+      formArea.appendChild(lbl("Valor inicial (R$) *"));formArea.appendChild(inp("ii-val","0,00","number"));
+      formArea.appendChild(lbl("Data da aplicação *"));formArea.appendChild(inp("ii-data","","date"));
       formArea.appendChild(lbl("Tipo de rentabilidade"));
-      var rSel=sel("ii-rent",[{v:"prefixado",l:"Prefixado"},{v:"cdi",l:"% do CDI"},{v:"ipca",l:"IPCA + taxa"},{v:"outro",l:"Outro"}]);
+      var rSel=sel("ii-rent",[{v:"prefixado",l:"Prefixado"},{v:"cdi_pct",l:"% do CDI"},{v:"ipca_mais",l:"IPCA + taxa"},{v:"personalizado",l:"Taxa personalizada"}]);
       formArea.appendChild(rSel);
-      formArea.appendChild(lbl("Taxa (% a.a.)"));formArea.appendChild(inp("ii-taxa","Ex: 13","number"));
+      var rentField=ce("div");rentField.id="ii-rent-field";formArea.appendChild(rentField);
+      function renderRentField(){
+        rentField.innerHTML="";
+        var rv=gi("ii-rent")?gi("ii-rent").value:"prefixado";
+        if(rv==="prefixado"){rentField.appendChild(lbl("Taxa anual (%)"));rentField.appendChild(inp("ii-taxa","Ex: 13","number"));}
+        else if(rv==="cdi_pct"){rentField.appendChild(lbl("Percentual do CDI (%)"));rentField.appendChild(inp("ii-cdi","Ex: 110","number"));}
+        else if(rv==="ipca_mais"){rentField.appendChild(lbl("Taxa adicional ao IPCA (% a.a.)"));rentField.appendChild(inp("ii-ipca","Ex: 5","number"));}
+        else{rentField.appendChild(lbl("Descreva a taxa personalizada"));rentField.appendChild(inp("ii-taxaperso","Ex: IGP-M + 6% a.a."));}
+      }
+      rSel.onchange=renderRentField;renderRentField();
       formArea.appendChild(lbl("Vencimento (opcional)"));formArea.appendChild(inp("ii-venc","","date"));
+      formArea.appendChild(lbl("Liquidez"));
+      formArea.appendChild(sel("ii-liq",[{v:"diaria",l:"Diária"},{v:"vencimento",l:"No vencimento"},{v:"outro",l:"Outro"}]));
+      var irW=ce("div");irW.style.cssText="display:flex;align-items:center;gap:8px;margin:4px 0 10px";
+      var irCb=ce("input");irCb.type="checkbox";irCb.id="ii-isento";
+      var irL=ce("label");irL.htmlFor="ii-isento";irL.style.cssText="font-size:12px;color:#6b7280";irL.textContent="Isento de Imposto de Renda";
+      irW.appendChild(irCb);irW.appendChild(irL);formArea.appendChild(irW);
       formArea.appendChild(lbl("Objetivo financeiro (opcional)"));
-      var objSel=sel("ii-obj",[{v:"",l:"Nenhum"}].concat((D.objectives||[]).map(function(o){return{v:o.name,l:o.icon+" "+o.name}})));
-      formArea.appendChild(objSel);
+      formArea.appendChild(sel("ii-obj",objOptions()));
+      formArea.appendChild(lbl("Observação (opcional)"));var obs=ce("textarea","inp");obs.id="ii-obs";obs.rows=2;obs.style.marginBottom="8px";formArea.appendChild(obs);
     } else {
-      formArea.appendChild(lbl("Nome do ativo"));formArea.appendChild(inp("ii-nome","Ex: PETR4, HGLG11, BOVA11"));
-      formArea.appendChild(lbl("Tipo"));
-      formArea.appendChild(sel("ii-subtipo",[{v:"acao",l:"Ação"},{v:"fii",l:"Fundo Imobiliário"},{v:"etf",l:"ETF"},{v:"fundo",l:"Fundo de Investimento"},{v:"outro",l:"Outro"}]));
-      formArea.appendChild(lbl("Instituição"));formArea.appendChild(inp("ii-inst","Ex: Clear, XP, Rico"));
-      formArea.appendChild(lbl("Quantidade"));formArea.appendChild(inp("ii-qtd","0","number"));
-      formArea.appendChild(lbl("Preço médio (R$)"));formArea.appendChild(inp("ii-preco","0,00","number"));
-      formArea.appendChild(lbl("Data da compra"));formArea.appendChild(inp("ii-data","","date"));
+      formArea.appendChild(lbl("Nome ou código do ativo *"));formArea.appendChild(inp("ii-nome","Ex: PETR4, HGLG11, BOVA11"));
+      formArea.appendChild(lbl("Tipo do ativo"));
+      formArea.appendChild(sel("ii-subtipo",[{v:"acao",l:"Ação"},{v:"fii",l:"Fundo Imobiliário"},{v:"etf",l:"ETF"},{v:"fundo",l:"Fundo de Investimento"},{v:"bdr",l:"BDR"},{v:"cripto",l:"Criptoativo"},{v:"outro",l:"Outro"}]));
+      formArea.appendChild(lbl("Instituição/corretora *"));formArea.appendChild(inp("ii-inst","Ex: Clear, XP, Rico"));
+      formArea.appendChild(originNote());
+      formArea.appendChild(lbl("Quantidade"));var qtdI=inp("ii-qtd","0","number");formArea.appendChild(qtdI);
+      formArea.appendChild(lbl("Preço médio (R$)"));var precoI=inp("ii-preco","0,00","number");formArea.appendChild(precoI);
+      formArea.appendChild(lbl("Valor inicialmente investido (R$) *"));var valI=inp("ii-val","0,00","number");formArea.appendChild(valI);
+      function recalc(){var q=parseFloat(qtdI.value)||0,p=parseFloat(precoI.value)||0;if(q&&p)valI.value=(q*p).toFixed(2)}
+      qtdI.oninput=recalc;precoI.oninput=recalc;
+      formArea.appendChild(lbl("Data da compra *"));formArea.appendChild(inp("ii-data","","date"));
       formArea.appendChild(lbl("Objetivo financeiro (opcional)"));
-      var objSel2=sel("ii-obj",[{v:"",l:"Nenhum"}].concat((D.objectives||[]).map(function(o){return{v:o.name,l:o.icon+" "+o.name}})));
-      formArea.appendChild(objSel2);
+      formArea.appendChild(sel("ii-obj",objOptions()));
+      formArea.appendChild(lbl("Observação (opcional)"));var obs2=ce("textarea","inp");obs2.id="ii-obs";obs2.rows=2;obs2.style.marginBottom="8px";formArea.appendChild(obs2);
     }
+    formArea.appendChild(lbl("Status"));
+    formArea.appendChild(sel("ii-status",[{v:"ativo",l:"Ativo"},{v:"encerrado",l:"Encerrado"}]));
   }
   renderForm();
 
@@ -2578,19 +3170,34 @@ function oAddInvestimento(){
     var nome=gi("ii-nome")?gi("ii-nome").value.trim():"";
     var inst=gi("ii-inst")?gi("ii-inst").value.trim():"";
     var data=gi("ii-data")?gi("ii-data").value:"";
+    var val=parseFloat(gi("ii-val")?gi("ii-val").value:0)||0;
     var obj=gi("ii-obj")?gi("ii-obj").value:"";
     if(!nome){alert("Informe o nome do investimento.");return}
-    var inv={id:Date.now(),isAsset:true,tipo:_tipo,nome:nome,inst:inst,dataAplicacao:data,objetivo:obj};
+    if(!inst){alert("Informe a instituição.");return}
+    if(!data){alert("Informe uma data válida.");return}
+    if(!val||val<=0){alert("Informe um valor maior que zero.");return}
+    var objObj=(D.objectives||[]).find(function(o){return String(o.id)===String(obj)});
+    var inv={id:Date.now(),isAsset:true,tipo:_tipo,nome:nome,inst:inst,dataAplicacao:data,
+      objetivoId:obj||"",objetivo:objObj?objObj.name:"",
+      observacao:gi("ii-obs")?gi("ii-obs").value.trim():"",
+      status:gi("ii-status")?gi("ii-status").value:"ativo",
+      historico:[]};
     if(_tipo==="fixo"){
-      inv.valorInicial=parseFloat(gi("ii-val")?gi("ii-val").value:0)||0;
+      inv.modalidade=gi("ii-modal")?gi("ii-modal").value:"outro";
+      inv.valorInicial=val;
       inv.rentTipo=gi("ii-rent")?gi("ii-rent").value:"prefixado";
-      inv.taxa=parseFloat(gi("ii-taxa")?gi("ii-taxa").value:0)||0;
+      if(inv.rentTipo==="prefixado")inv.taxa=parseFloat(gi("ii-taxa")?gi("ii-taxa").value:0)||0;
+      else if(inv.rentTipo==="cdi_pct")inv.cdiPct=parseFloat(gi("ii-cdi")?gi("ii-cdi").value:0)||0;
+      else if(inv.rentTipo==="ipca_mais")inv.ipcaTaxa=parseFloat(gi("ii-ipca")?gi("ii-ipca").value:0)||0;
+      else inv.taxaPersonalizada=gi("ii-taxaperso")?gi("ii-taxaperso").value.trim():"";
       inv.vencimento=gi("ii-venc")?gi("ii-venc").value:"";
+      inv.liquidez=gi("ii-liq")?gi("ii-liq").value:"outro";
+      inv.isento=gi("ii-isento")?gi("ii-isento").checked:false;
     } else {
       inv.subtipo=gi("ii-subtipo")?gi("ii-subtipo").value:"acao";
       inv.qtd=parseFloat(gi("ii-qtd")?gi("ii-qtd").value:0)||0;
       inv.precoMedio=parseFloat(gi("ii-preco")?gi("ii-preco").value:0)||0;
-      inv.valorInicial=inv.qtd*inv.precoMedio;
+      inv.valorInicial=val;
     }
     D.investments=D.investments||[];D.investments.push(inv);sv();oM(false,"m2");nav("invest");
   };
@@ -2608,30 +3215,84 @@ function oEditInvestimento(idx,inv){
     i.style.marginBottom="8px";return i;
   }
   function lbl(txt){var l=ce("label","lbl");l.textContent=txt;return l}
-  bd.appendChild(lbl("Nome"));bd.appendChild(inp("ei-nome","Nome",inv.nome));
-  bd.appendChild(lbl("Instituição"));bd.appendChild(inp("ei-inst","Instituição",inv.inst));
+  function sel(id,opts,cur){
+    var s=ce("select","inp sel");s.id=id;s.style.marginBottom="8px";
+    opts.forEach(function(o){var op=ce("option");op.value=o.v;op.textContent=o.l;if(o.v===cur)op.selected=true;s.appendChild(op)});
+    return s;
+  }
+  bd.appendChild(lbl("Nome *"));bd.appendChild(inp("ei-nome","Nome",inv.nome));
+  bd.appendChild(lbl("Instituição *"));bd.appendChild(inp("ei-inst","Instituição",inv.inst));
+  bd.appendChild(lbl("Data da aplicação *"));bd.appendChild(inp("ei-data","",inv.dataAplicacao,"date"));
   if(inv.tipo==="fixo"){
-    bd.appendChild(lbl("Valor inicial (R$)"));bd.appendChild(inp("ei-val","",inv.valorInicial,"number"));
-    bd.appendChild(lbl("Taxa (% a.a.)"));bd.appendChild(inp("ei-taxa","",inv.taxa,"number"));
+    bd.appendChild(lbl("Modalidade"));bd.appendChild(sel("ei-modal",[{v:"cdb",l:"CDB"},{v:"rdb",l:"RDB"},{v:"lci",l:"LCI"},{v:"lca",l:"LCA"},{v:"tesouro",l:"Tesouro Direto"},{v:"debenture",l:"Debênture"},{v:"poupanca",l:"Poupança"},{v:"fundo_rf",l:"Fundo de renda fixa"},{v:"outro",l:"Outro"}],inv.modalidade));
+    bd.appendChild(lbl("Valor inicial (R$) *"));bd.appendChild(inp("ei-val","",inv.valorInicial,"number"));
+    var rSel2=sel("ei-rent",[{v:"prefixado",l:"Prefixado"},{v:"cdi_pct",l:"% do CDI"},{v:"ipca_mais",l:"IPCA + taxa"},{v:"personalizado",l:"Taxa personalizada"}],inv.rentTipo);
+    bd.appendChild(lbl("Tipo de rentabilidade"));bd.appendChild(rSel2);
+    var rentField=ce("div");rentField.id="ei-rent-field";bd.appendChild(rentField);
+    function renderRentField(){
+      rentField.innerHTML="";
+      var rv=gi("ei-rent")?gi("ei-rent").value:"prefixado";
+      if(rv==="prefixado"){rentField.appendChild(lbl("Taxa anual (%)"));rentField.appendChild(inp("ei-taxa","",inv.taxa,"number"));}
+      else if(rv==="cdi_pct"){rentField.appendChild(lbl("Percentual do CDI (%)"));rentField.appendChild(inp("ei-cdi","",inv.cdiPct,"number"));}
+      else if(rv==="ipca_mais"){rentField.appendChild(lbl("Taxa adicional ao IPCA (% a.a.)"));rentField.appendChild(inp("ei-ipca","",inv.ipcaTaxa,"number"));}
+      else{rentField.appendChild(lbl("Descreva a taxa personalizada"));rentField.appendChild(inp("ei-taxaperso","",inv.taxaPersonalizada));}
+    }
+    rSel2.onchange=renderRentField;renderRentField();
     bd.appendChild(lbl("Vencimento"));bd.appendChild(inp("ei-venc","",inv.vencimento,"date"));
+    bd.appendChild(lbl("Liquidez"));bd.appendChild(sel("ei-liq",[{v:"diaria",l:"Diária"},{v:"vencimento",l:"No vencimento"},{v:"outro",l:"Outro"}],inv.liquidez));
+    var irW=ce("div");irW.style.cssText="display:flex;align-items:center;gap:8px;margin:4px 0 10px";
+    var irCb=ce("input");irCb.type="checkbox";irCb.id="ei-isento";irCb.checked=!!inv.isento;
+    var irL=ce("label");irL.htmlFor="ei-isento";irL.style.cssText="font-size:12px;color:#6b7280";irL.textContent="Isento de Imposto de Renda";
+    irW.appendChild(irCb);irW.appendChild(irL);bd.appendChild(irW);
   } else {
+    bd.appendChild(lbl("Tipo do ativo"));bd.appendChild(sel("ei-subtipo",[{v:"acao",l:"Ação"},{v:"fii",l:"Fundo Imobiliário"},{v:"etf",l:"ETF"},{v:"fundo",l:"Fundo de Investimento"},{v:"bdr",l:"BDR"},{v:"cripto",l:"Criptoativo"},{v:"outro",l:"Outro"}],inv.subtipo));
     bd.appendChild(lbl("Quantidade"));bd.appendChild(inp("ei-qtd","",inv.qtd,"number"));
     bd.appendChild(lbl("Preço médio (R$)"));bd.appendChild(inp("ei-preco","",inv.precoMedio,"number"));
+    bd.appendChild(lbl("Valor inicialmente investido (R$) *"));bd.appendChild(inp("ei-val","",inv.valorInicial,"number"));
   }
+  var objs=D.objectives||[];
+  var objOpts=objs.length?[{v:"",l:"Nenhum"}].concat(objs.map(function(o){return{v:o.id,l:o.icon+" "+o.name}})):[{v:"",l:"Nenhum objetivo financeiro disponível."}];
+  bd.appendChild(lbl("Objetivo financeiro (opcional)"));bd.appendChild(sel("ei-obj",objOpts,inv.objetivoId||""));
+  bd.appendChild(lbl("Observação (opcional)"));var obs=ce("textarea","inp");obs.id="ei-obs";obs.rows=2;obs.value=inv.observacao||"";obs.style.marginBottom="8px";bd.appendChild(obs);
+  bd.appendChild(lbl("Status"));bd.appendChild(sel("ei-status",[{v:"ativo",l:"Ativo"},{v:"encerrado",l:"Encerrado"}],inv.status||"ativo"));
+
   var brow=ce("div","brow");
   var cancel=ce("button","btn bou");cancel.textContent="Cancelar";cancel.onclick=function(){oM(false,"m2")};
   var save=ce("button","btn bpf");save.textContent="Salvar";
   save.onclick=function(){
-    D.investments[idx].nome=gi("ei-nome").value.trim()||inv.nome;
-    D.investments[idx].inst=gi("ei-inst").value.trim()||"";
+    var nome=gi("ei-nome").value.trim();var inst=gi("ei-inst").value.trim();var data=gi("ei-data").value;
+    var val=parseFloat(gi("ei-val").value);
+    if(!nome){alert("Informe o nome do investimento.");return}
+    if(!inst){alert("Informe a instituição.");return}
+    if(!data){alert("Informe uma data válida.");return}
+    if(!val||val<=0){alert("Informe um valor maior que zero.");return}
+    var rec=D.investments[idx];
+    var valorAnterior=rec.valorInicial;
+    rec.nome=nome;rec.inst=inst;rec.dataAplicacao=data;
+    var objId=gi("ei-obj")?gi("ei-obj").value:"";
+    var objObj=objs.find(function(o){return String(o.id)===String(objId)});
+    rec.objetivoId=objId||"";rec.objetivo=objObj?objObj.name:"";
+    rec.observacao=gi("ei-obs")?gi("ei-obs").value.trim():"";
+    rec.status=gi("ei-status")?gi("ei-status").value:"ativo";
     if(inv.tipo==="fixo"){
-      D.investments[idx].valorInicial=parseFloat(gi("ei-val").value)||inv.valorInicial;
-      D.investments[idx].taxa=parseFloat(gi("ei-taxa").value)||inv.taxa;
-      D.investments[idx].vencimento=gi("ei-venc").value||"";
+      rec.modalidade=gi("ei-modal")?gi("ei-modal").value:rec.modalidade;
+      rec.valorInicial=val;
+      rec.rentTipo=gi("ei-rent")?gi("ei-rent").value:rec.rentTipo;
+      if(rec.rentTipo==="prefixado")rec.taxa=parseFloat(gi("ei-taxa")?gi("ei-taxa").value:0)||0;
+      else if(rec.rentTipo==="cdi_pct")rec.cdiPct=parseFloat(gi("ei-cdi")?gi("ei-cdi").value:0)||0;
+      else if(rec.rentTipo==="ipca_mais")rec.ipcaTaxa=parseFloat(gi("ei-ipca")?gi("ei-ipca").value:0)||0;
+      else rec.taxaPersonalizada=gi("ei-taxaperso")?gi("ei-taxaperso").value.trim():"";
+      rec.vencimento=gi("ei-venc")?gi("ei-venc").value:"";
+      rec.liquidez=gi("ei-liq")?gi("ei-liq").value:rec.liquidez;
+      rec.isento=gi("ei-isento")?gi("ei-isento").checked:false;
     } else {
-      D.investments[idx].qtd=parseFloat(gi("ei-qtd").value)||inv.qtd;
-      D.investments[idx].precoMedio=parseFloat(gi("ei-preco").value)||inv.precoMedio;
-      D.investments[idx].valorInicial=(D.investments[idx].qtd)*(D.investments[idx].precoMedio);
+      rec.qtd=parseFloat(gi("ei-qtd").value)||rec.qtd;
+      rec.precoMedio=parseFloat(gi("ei-preco").value)||rec.precoMedio;
+      rec.valorInicial=val;
+    }
+    if(valorAnterior!==rec.valorInicial){
+      rec.historico=rec.historico||[];
+      rec.historico.push({tipo:"correcao_cadastral",valorAnterior:valorAnterior,valorNovo:rec.valorInicial,data:tod(),hora:new Date().toTimeString().slice(0,5),origem:"manual"});
     }
     sv();oM(false,"m2");nav("invest");
   };
@@ -2643,17 +3304,25 @@ function oAtualizarValor(idx,inv){
   var bd=gi("m2b");bd.innerHTML="";
   var tt=ce("div","mt");tt.textContent="Atualizar valor · "+inv.nome;bd.appendChild(tt);
   var note=ce("div");note.style.cssText="font-size:11px;color:#6b7280;background:#f9fafb;border-radius:8px;padding:10px;margin-bottom:12px";
-  note.textContent="Informe o valor atual do investimento. O sistema calculará o rendimento automaticamente. Esta atualização é manual — não está em tempo real.";
+  note.innerHTML="<b>Atualização manual</b> — informe o valor atual do investimento. O sistema calculará o rendimento automaticamente. Não é uma cotação em tempo real.";
   bd.appendChild(note);
   var lbl=ce("label","lbl");lbl.textContent="Valor atual (R$)";bd.appendChild(lbl);
   var valInp=ce("input","inp");valInp.type="number";valInp.value=inv.valorAtual||inv.valorInicial||0;valInp.style.marginBottom="8px";bd.appendChild(valInp);
+  var lbl2=ce("label","lbl");lbl2.textContent="Data da atualização";bd.appendChild(lbl2);
+  var dtInp=ce("input","inp");dtInp.type="date";dtInp.value=tod();dtInp.style.marginBottom="8px";bd.appendChild(dtInp);
+  var lbl3=ce("label","lbl");lbl3.textContent="Observação (opcional)";bd.appendChild(lbl3);
+  var obsInp=ce("textarea","inp");obsInp.rows=2;obsInp.style.marginBottom="8px";bd.appendChild(obsInp);
   var brow=ce("div","brow");
   var cancel=ce("button","btn bou");cancel.textContent="Cancelar";cancel.onclick=function(){oM(false,"m2")};
   var save=ce("button","btn bpf");save.textContent="Salvar";
   save.onclick=function(){
     var v=parseFloat(valInp.value)||0;
-    D.investments[idx].valorAtual=v;
-    D.investments[idx].updatedAt=new Date().toISOString();
+    var rec=D.investments[idx];
+    var valorAnterior=rec.valorAtual!==undefined?rec.valorAtual:rec.valorInicial;
+    rec.valorAtual=v;
+    rec.updatedAt=new Date().toISOString();
+    rec.historico=rec.historico||[];
+    rec.historico.push({tipo:"atualizacao_valor",valorAnterior:valorAnterior,valorNovo:v,data:dtInp.value||tod(),hora:new Date().toTimeString().slice(0,5),origem:"manual",observacao:obsInp.value.trim()});
     sv();oM(false,"m2");nav("invest");
   };
   brow.appendChild(cancel);brow.appendChild(save);bd.appendChild(brow);oM(true,"m2");
@@ -2698,15 +3367,29 @@ function rInvestSim(c){
 
   card.appendChild(g2);card.appendChild(g2b);
 
+  var g2c=ce("div");g2c.style.cssText="display:grid;grid-template-columns:1fr 1fr;gap:8px";
+  g2c.appendChild(inp("sim-inf","Inflação estimada (% a.a., opcional)","0",window._simInf||""));
+  var objW=ce("div");objW.style.marginBottom="8px";
+  var objL=ce("label","lbl");objL.textContent="Objetivo financeiro (opcional)";objW.appendChild(objL);
+  var objS=ce("select","inp sel");objS.id="sim-obj";
+  var objsPF=D.objectives||[];
+  var objOptsPF=objsPF.length?[{v:"",l:"Nenhum"}].concat(objsPF.map(function(o){return{v:o.id,l:o.icon+" "+o.name}})):[{v:"",l:"Nenhum objetivo financeiro disponível."}];
+  objOptsPF.forEach(function(o){var op=ce("option");op.value=o.v;op.textContent=o.l;objS.appendChild(op)});
+  objS.oninput=calcSim;objW.appendChild(objS);g2c.appendChild(objW);
+  card.appendChild(g2c);
+
   if(_tipo==="fixo"){
     var rentW=ce("div");rentW.style.cssText="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px";
     var rtW=ce("div");rtW.style.marginBottom="8px";
     var rtL=ce("label","lbl");rtL.textContent="Tipo de rentabilidade";rtW.appendChild(rtL);
     var rtS=ce("select","inp sel");rtS.id="sim-rent";
     [{v:"prefixado",l:"Prefixado"},{v:"cdi_pct",l:"% do CDI"},{v:"ipca_mais",l:"IPCA + taxa"},{v:"personalizado",l:"Taxa personalizada"}].forEach(function(o){var op=ce("option");op.value=o.v;op.textContent=o.l;if(o.v===(window._simRent||"prefixado"))op.selected=true;rtS.appendChild(op)});
-    rtS.oninput=function(){window._simRent=rtS.value;calcSim};rtW.appendChild(rtS);rentW.appendChild(rtW);
+    rtS.oninput=function(){window._simRent=rtS.value;calcSim()};rtW.appendChild(rtS);rentW.appendChild(rtW);
     rentW.appendChild(inp("sim-taxa","Taxa (% a.a.)","13",window._simTaxa||"","number"));
     card.appendChild(rentW);
+    var noteRent=ce("div");noteRent.style.cssText="font-size:10.5px;color:#6b7280;margin-top:2px";
+    noteRent.textContent="Esta é uma estimativa baseada nas taxas informadas por você (CDI/IPCA não são buscados automaticamente).";
+    card.appendChild(noteRent);
     // IR
     var irW=ce("div");irW.style.cssText="display:flex;align-items:center;gap:8px;margin:8px 0";
     var irCb=ce("input");irCb.type="checkbox";irCb.id="sim-ir";irCb.checked=window._simIR!==false;irCb.oninput=calcSim;
@@ -2725,7 +3408,7 @@ function rInvestSim(c){
     });
     cenW.appendChild(g3);
     var aviso=ce("div");aviso.style.cssText="font-size:10.5px;color:#dc2626;background:#fee2e2;border-radius:8px;padding:8px 10px;margin-top:8px";
-    aviso.textContent="⚠️ Esta simulação utiliza cenários hipotéticos. Investimentos de renda variável podem oscilar e não possuem rentabilidade garantida.";
+    aviso.textContent="⚠️ Os cenários são hipotéticos. Investimentos de renda variável podem oscilar e não possuem rentabilidade garantida.";
     cenW.appendChild(aviso);card.appendChild(cenW);
   }
 
@@ -2742,6 +3425,12 @@ function rInvestSim(c){
     c.appendChild(avF);
   }
 
+  // Salvar como plano (item 12) — não movimenta dinheiro
+  var planWrap=ce("div");planWrap.style.cssText="text-align:center;margin-top:14px";
+  var planBtn=ce("button","btn bou");planBtn.style.cssText="font-size:12px";planBtn.textContent="💾 Salvar como plano";
+  planBtn.onclick=function(){salvarSimulacaoComoPlano(false,_tipo)};
+  planWrap.appendChild(planBtn);c.appendChild(planWrap);
+
   calcSim();
 
   function calcSim(){
@@ -2750,6 +3439,9 @@ function rInvestSim(c){
     var prazo=parseInt(gi("sim-prazo")?gi("sim-prazo").value:0)||0;
     var unit=gi("sim-unit")?gi("sim-unit").value:"meses";
     var meses=unit==="anos"?prazo*12:prazo;
+    var infA=parseFloat(gi("sim-inf")?gi("sim-inf").value:0)||0;
+    var objId=gi("sim-obj")?gi("sim-obj").value:"";
+    var objSel=objsPF.find(function(o){return String(o.id)===String(objId)});
     var res=gi("sim-res");if(!res)return;
 
     if(!vi||!meses){res.innerHTML="<div style='color:#9ca3af;font-size:12px;text-align:center;padding:16px'>Preencha as informações necessárias para visualizar a estimativa.</div>";return}
@@ -2769,9 +3461,11 @@ function rInvestSim(c){
       }
       var liq=bruto-ir;
       var bars=simBars(vi,am,meses,taxaM);
-      res.innerHTML=simResultHTML([{label:"Resultado",vi:vi,aportes:aportes,bruto:bruto,ir:ir,liq:liq,bars:bars,cor:"#059669"}]);
+      res.innerHTML=simResultHTML([{label:"Resultado",vi:vi,aportes:aportes,bruto:bruto,ir:ir,liq:liq,bars:bars,cor:"#059669"}],infA,meses,objSel);
     } else {
+      var semRend={label:"Sem rendimento",pct:0,cor:"#9ca3af"};
       var cenarios=[
+        semRend,
         {label:"Conservador",pct:parseFloat(gi("sim-cons")?gi("sim-cons").value:4)||4,cor:"#0284c7"},
         {label:"Moderado",pct:parseFloat(gi("sim-mod")?gi("sim-mod").value:8)||8,cor:"#059669"},
         {label:"Otimista",pct:parseFloat(gi("sim-otim")?gi("sim-otim").value:14)||14,cor:"#7c3aed"}
@@ -2783,7 +3477,7 @@ function rInvestSim(c){
         var bars2=simBars(vi,am,meses,tm);
         return{label:cn.label,vi:vi,aportes:apt2,bruto:tot,ir:0,liq:tot,bars:bars2,cor:cn.cor};
       });
-      res.innerHTML=simResultHTML(results);
+      res.innerHTML=simResultHTML(results,infA,meses,objSel);
     }
   }
 
@@ -2797,23 +3491,60 @@ function rInvestSim(c){
     return pts;
   }
 
-  function simResultHTML(results){
+  function mesesParaMeta(vi,am,meses,taxaM,meta){
+    var tot=vi,m=0,max=Math.max(meses,1200);
+    if(tot>=meta)return 0;
+    while(tot<meta&&m<max){tot=tot*(1+taxaM)+am;m++}
+    return m<max?m:null;
+  }
+
+  function simResultHTML(results,infA,meses,objSel){
     var html="";
+    if(results.length>1){
+      html+="<div style='overflow-x:auto;-webkit-overflow-scrolling:touch;margin-bottom:12px'>"
+        +"<table style='width:100%;min-width:420px;border-collapse:collapse;font-size:11px'>"
+        +"<tr style='color:#9ca3af;text-align:left'><th style='padding:4px'>Cenário</th><th style='padding:4px'>Inicial</th><th style='padding:4px'>Aportes</th><th style='padding:4px'>Rendimento</th><th style='padding:4px'>Total</th></tr>";
+      results.forEach(function(r){
+        var rend=r.bruto-r.aportes;
+        html+="<tr style='border-top:1px solid #f0f0f0'><td style='padding:4px;font-weight:700;color:"+r.cor+"'>"+r.label+"</td>"
+          +"<td style='padding:4px'>"+R(r.vi)+"</td><td style='padding:4px'>"+R(r.aportes-r.vi)+"</td>"
+          +"<td style='padding:4px;color:"+(rend>=0?"#059669":"#dc2626")+"'>"+R(rend)+"</td><td style='padding:4px;font-weight:700'>"+R(r.bruto)+"</td></tr>";
+      });
+      html+="</table></div>";
+    }
     results.forEach(function(r){
       var rend=r.bruto-r.aportes;
+      var ganhoReal=rend;
+      if(infA>0&&meses>0){
+        var infTotal=Math.pow(1+infA/100,meses/12)-1;
+        ganhoReal=rend-(r.aportes*infTotal);
+      }
       html+="<div style='background:#fff;border:1px solid var(--bd);border-radius:12px;padding:14px;margin-bottom:12px'>";
       if(results.length>1)html+="<div style='font-size:11px;font-weight:700;color:"+r.cor+";margin-bottom:10px;text-transform:uppercase;letter-spacing:.5px'>"+r.label+"</div>";
       html+="<div style='display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:11.5px;margin-bottom:12px'>";
       function kpi(l,v,col){return "<div><div style='color:#9ca3af;font-size:10px'>"+l+"</div><div style='font-weight:700;color:"+(col||"var(--tx)")+"'>"+v+"</div></div>"}
-      html+=kpi("Total investido",R(r.aportes))
-        +kpi("Rendimento estimado",R(rend),rend>=0?"#059669":"#dc2626")
-        +kpi("Valor bruto",R(r.bruto))
-        +(r.ir?kpi("IR estimado","-"+R(r.ir),"#dc2626"):"")
-        +kpi("Valor líquido estimado",R(r.liq),"#059669");
+      html+=kpi("Valor inicial",R(r.vi))
+        +kpi("Total aportado",R(r.aportes-r.vi))
+        +kpi("Rendimento bruto",R(rend),rend>=0?"#059669":"#dc2626")
+        +(r.ir?kpi("Impostos","-"+R(r.ir),"#dc2626"):"")
+        +kpi("Valor líquido estimado",R(r.liq),"#059669")
+        +(infA>0?kpi("Ganho real (descontando inflação)",R(ganhoReal),ganhoReal>=0?"#059669":"#dc2626"):"");
       html+="</div>";
+      if(objSel){
+        var taxaMEfetiva=r.bars&&r.bars.length?(Math.pow(r.bars[r.bars.length-1].tot/(r.vi||1),1/meses)-1):0;
+        var vAtualObj=0;// estimativa simples parte do zero na simulação
+        html+="<div style='font-size:11px;color:#6b7280;background:#f0f9ff;border-radius:8px;padding:8px 10px;margin-bottom:10px'>";
+        if(r.bruto>=objSel.target){
+          html+="🎯 Este cenário atinge a meta \""+objSel.name+"\" ("+R(objSel.target)+") dentro do prazo simulado.";
+        } else {
+          html+="🎯 Este cenário não atinge a meta \""+objSel.name+"\" ("+R(objSel.target)+") no prazo simulado — faltariam "+R(objSel.target-r.bruto)+".";
+        }
+        html+="</div>";
+      }
       // Mini gráfico de barras SVG
       if(r.bars&&r.bars.length){
         var maxV=Math.max.apply(null,r.bars.map(function(b){return b.tot}))||1;
+        if(objSel&&objSel.target>maxV)maxV=objSel.target;
         var w=280,h=60,bw=Math.max(4,Math.floor(w/r.bars.length)-2);
         html+="<svg viewBox='0 0 "+w+" "+h+"' style='width:100%;height:60px;overflow:hidden'>";
         r.bars.forEach(function(b,i){
@@ -2823,14 +3554,283 @@ function rInvestSim(c){
           html+="<rect x='"+x+"' y='"+(h-hApt)+"' width='"+bw+"' height='"+hApt+"' fill='#86efac' opacity='.6'/>";
           html+="<rect x='"+x+"' y='"+(h-hTot)+"' width='"+bw+"' height='"+(hTot-hApt)+"' fill='"+r.cor+"' opacity='.8'/>";
         });
+        if(objSel&&objSel.target){
+          var metaY=h-Math.floor((objSel.target/maxV)*h);
+          html+="<line x1='0' y1='"+metaY+"' x2='"+w+"' y2='"+metaY+"' stroke='#dc2626' stroke-width='1' stroke-dasharray='4,3'/>";
+        }
         html+="</svg>";
         html+="<div style='display:flex;gap:12px;font-size:10px;color:#9ca3af;margin-top:4px'>"
-          +"<span>🟩 Aportado</span><span style='color:"+r.cor+"'>■ Rendimento</span></div>";
+          +"<span>🟩 Aportado</span><span style='color:"+r.cor+"'>■ Rendimento</span>"+(objSel?"<span style='color:#dc2626'>┄ Meta</span>":"")+"</div>";
       }
       html+="</div>";
     });
     return html;
   }
+}
+
+// ── Simulador PJ (réplica temática do rInvestSim, estado isolado) ────────────
+function rInvestSimPJ(c){
+  var _tipo=window._simTipoPJ||"fixo";
+  var card=ce("div","card");
+
+  // Tipo de simulação
+  var typeSel=ce("div");typeSel.style.cssText="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px";
+  ["fixo","variavel"].forEach(function(t){
+    var tb=ce("button");
+    tb.style.cssText="padding:10px;border-radius:10px;border:2px solid "+(t===_tipo?"#C4693A":"var(--bd)")+";background:"+(t===_tipo?"#fdf1ea":"transparent")+";font-family:Poppins,sans-serif;font-size:12px;font-weight:600;cursor:pointer;color:var(--tx)";
+    tb.textContent=t==="fixo"?"🔒 Renda Fixa":"📊 Renda Variável";
+    tb.onclick=function(){window._simTipoPJ=t;rInvestSimPJ_render(c)};
+    typeSel.appendChild(tb);
+  });
+  card.appendChild(typeSel);
+
+  // Campos comuns
+  function inp(id,label,placeholder,val,type){
+    var w=ce("div");w.style.marginBottom="8px";
+    var l=ce("label","lbl");l.textContent=label;w.appendChild(l);
+    var i=ce("input","inp");i.id=id;i.placeholder=placeholder;i.value=val||"";i.type=type||"number";
+    i.oninput=calcSimPJ;w.appendChild(i);return w;
+  }
+
+  var g2=ce("div");g2.style.cssText="display:grid;grid-template-columns:1fr 1fr;gap:8px";
+  g2.appendChild(inp("sim-vi-pj","Valor inicial (R$)","1000",window._simVIPJ||""));
+  g2.appendChild(inp("sim-am-pj","Aporte mensal (R$)","0",window._simAMPJ||""));
+
+  var g2b=ce("div");g2b.style.cssText="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:0";
+  g2b.appendChild(inp("sim-prazo-pj","Prazo","24",window._simPrazoPJ||""));
+  // Unidade
+  var unitW=ce("div");unitW.style.marginBottom="8px";
+  var unitL=ce("label","lbl");unitL.textContent="Unidade";unitW.appendChild(unitL);
+  var unitS=ce("select","inp sel");unitS.id="sim-unit-pj";
+  [{v:"meses",l:"Meses"},{v:"anos",l:"Anos"}].forEach(function(o){var op=ce("option");op.value=o.v;op.textContent=o.l;if(o.v===(window._simUnitPJ||"meses"))op.selected=true;unitS.appendChild(op)});
+  unitS.oninput=calcSimPJ;unitW.appendChild(unitS);g2b.appendChild(unitW);
+
+  card.appendChild(g2);card.appendChild(g2b);
+
+  var g2c=ce("div");g2c.style.cssText="display:grid;grid-template-columns:1fr 1fr;gap:8px";
+  g2c.appendChild(inp("sim-inf-pj","Inflação estimada (% a.a., opcional)","0",window._simInfPJ||""));
+  var objW=ce("div");objW.style.marginBottom="8px";
+  var objL=ce("label","lbl");objL.textContent="Objetivo financeiro (opcional)";objW.appendChild(objL);
+  var objS=ce("select","inp sel");objS.id="sim-obj-pj";
+  var objsPJ2=D.pjObjectives||[];
+  var objOptsPJ2=objsPJ2.length?[{v:"",l:"Nenhum"}].concat(objsPJ2.map(function(o){return{v:o.id,l:o.icon+" "+o.name}})):[{v:"",l:"Nenhum objetivo financeiro disponível."}];
+  objOptsPJ2.forEach(function(o){var op=ce("option");op.value=o.v;op.textContent=o.l;objS.appendChild(op)});
+  objS.oninput=calcSimPJ;objW.appendChild(objS);g2c.appendChild(objW);
+  card.appendChild(g2c);
+
+  if(_tipo==="fixo"){
+    var rentW=ce("div");rentW.style.cssText="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px";
+    var rtW=ce("div");rtW.style.marginBottom="8px";
+    var rtL=ce("label","lbl");rtL.textContent="Tipo de rentabilidade";rtW.appendChild(rtL);
+    var rtS=ce("select","inp sel");rtS.id="sim-rent-pj";
+    [{v:"prefixado",l:"Prefixado"},{v:"cdi_pct",l:"% do CDI"},{v:"ipca_mais",l:"IPCA + taxa"},{v:"personalizado",l:"Taxa personalizada"}].forEach(function(o){var op=ce("option");op.value=o.v;op.textContent=o.l;if(o.v===(window._simRentPJ||"prefixado"))op.selected=true;rtS.appendChild(op)});
+    rtS.oninput=function(){window._simRentPJ=rtS.value;calcSimPJ()};rtW.appendChild(rtS);rentW.appendChild(rtW);
+    rentW.appendChild(inp("sim-taxa-pj","Taxa (% a.a.)","13",window._simTaxaPJ||"","number"));
+    card.appendChild(rentW);
+    var noteRentPJ=ce("div");noteRentPJ.style.cssText="font-size:10.5px;color:#6b7280;margin-top:2px";
+    noteRentPJ.textContent="Esta é uma estimativa baseada nas taxas informadas por você (CDI/IPCA não são buscados automaticamente).";
+    card.appendChild(noteRentPJ);
+    // IR
+    var irW=ce("div");irW.style.cssText="display:flex;align-items:center;gap:8px;margin:8px 0";
+    var irCb=ce("input");irCb.type="checkbox";irCb.id="sim-ir-pj";irCb.checked=window._simIRPJ!==false;irCb.oninput=calcSimPJ;
+    var irL=ce("label");irL.htmlFor="sim-ir-pj";irL.style.cssText="font-size:12px;color:#6b7280";irL.textContent="Considerar Imposto de Renda (tabela regressiva)";
+    irW.appendChild(irCb);irW.appendChild(irL);card.appendChild(irW);
+  } else {
+    var cenW=ce("div");cenW.style.marginTop="8px";
+    var cenL=ce("label","lbl");cenL.textContent="Rentabilidade por cenário (% a.a.)";cenW.appendChild(cenL);
+    var g3=ce("div");g3.style.cssText="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px";
+    [{id:"sim-cons-pj",label:"Conservador",ph:"4",def:window._simConsPJ||"4"},
+     {id:"sim-mod-pj",label:"Moderado",ph:"8",def:window._simModPJ||"8"},
+     {id:"sim-otim-pj",label:"Otimista",ph:"14",def:window._simOtimPJ||"14"}].forEach(function(f){
+      var w2=ce("div");
+      var l2=ce("label","lbl");l2.textContent=f.label;w2.appendChild(l2);
+      var i2=ce("input","inp");i2.id=f.id;i2.type="number";i2.value=f.def;i2.placeholder=f.ph;i2.oninput=calcSimPJ;w2.appendChild(i2);g3.appendChild(w2);
+    });
+    cenW.appendChild(g3);
+    var aviso=ce("div");aviso.style.cssText="font-size:10.5px;color:#dc2626;background:#fee2e2;border-radius:8px;padding:8px 10px;margin-top:8px";
+    aviso.textContent="⚠️ Os cenários são hipotéticos. Investimentos de renda variável podem oscilar e não possuem rentabilidade garantida.";
+    cenW.appendChild(aviso);card.appendChild(cenW);
+  }
+
+  // Resultados
+  var resCard=ce("div");resCard.id="sim-res-pj";resCard.style.cssText="margin-top:14px";
+  card.appendChild(resCard);
+
+  c.appendChild(card);
+
+  // Aviso renda fixa
+  if(_tipo==="fixo"){
+    var avF=ce("div");avF.style.cssText="font-size:10.5px;color:#92400e;background:#fef3c7;border-radius:8px;padding:8px 10px;margin-top:8px";
+    avF.textContent="💡 Resultado estimado. As taxas podem variar durante o período.";
+    c.appendChild(avF);
+  }
+
+  // Salvar como plano (item 12) — não movimenta dinheiro
+  var planWrapPJ=ce("div");planWrapPJ.style.cssText="text-align:center;margin-top:14px";
+  var planBtnPJ=ce("button","btn bou");planBtnPJ.style.cssText="font-size:12px";planBtnPJ.textContent="💾 Salvar como plano";
+  planBtnPJ.onclick=function(){salvarSimulacaoComoPlano(true,_tipo)};
+  planWrapPJ.appendChild(planBtnPJ);c.appendChild(planWrapPJ);
+
+  calcSimPJ();
+
+  function calcSimPJ(){
+    var vi=parseFloat(gi("sim-vi-pj")?gi("sim-vi-pj").value:0)||0;
+    var am=parseFloat(gi("sim-am-pj")?gi("sim-am-pj").value:0)||0;
+    var prazo=parseInt(gi("sim-prazo-pj")?gi("sim-prazo-pj").value:0)||0;
+    var unit=gi("sim-unit-pj")?gi("sim-unit-pj").value:"meses";
+    var meses=unit==="anos"?prazo*12:prazo;
+    var infA=parseFloat(gi("sim-inf-pj")?gi("sim-inf-pj").value:0)||0;
+    var objId=gi("sim-obj-pj")?gi("sim-obj-pj").value:"";
+    var objSel=objsPJ2.find(function(o){return String(o.id)===String(objId)});
+    var res=gi("sim-res-pj");if(!res)return;
+
+    if(!vi||!meses){res.innerHTML="<div style='color:#9ca3af;font-size:12px;text-align:center;padding:16px'>Preencha as informações necessárias para visualizar a estimativa.</div>";return}
+
+    if(_tipo==="fixo"){
+      var taxaA=parseFloat(gi("sim-taxa-pj")?gi("sim-taxa-pj").value:0)||0;
+      var taxaM=Math.pow(1+taxaA/100,1/12)-1;
+      var total=vi;var aportes=vi;
+      for(var m=0;m<meses;m++){total=total*(1+taxaM)+am;aportes+=am;}
+      var bruto=total;
+      var ir=0;
+      var irCb2=gi("sim-ir-pj");
+      if(irCb2&&irCb2.checked){
+        var rend=bruto-aportes;
+        var aliq=meses<=6?0.225:meses<=12?0.20:meses<=24?0.175:0.15;
+        ir=rend*aliq;
+      }
+      var liq=bruto-ir;
+      var bars=simBarsPJ(vi,am,meses,taxaM);
+      res.innerHTML=simResultHTMLPJ([{label:"Resultado",vi:vi,aportes:aportes,bruto:bruto,ir:ir,liq:liq,bars:bars,cor:"#C4693A"}],infA,meses,objSel);
+    } else {
+      var semRendPJ={label:"Sem rendimento",pct:0,cor:"#9ca3af"};
+      var cenarios=[
+        semRendPJ,
+        {label:"Conservador",pct:parseFloat(gi("sim-cons-pj")?gi("sim-cons-pj").value:4)||4,cor:"#0284c7"},
+        {label:"Moderado",pct:parseFloat(gi("sim-mod-pj")?gi("sim-mod-pj").value:8)||8,cor:"#C4693A"},
+        {label:"Otimista",pct:parseFloat(gi("sim-otim-pj")?gi("sim-otim-pj").value:14)||14,cor:"#7c3aed"}
+      ];
+      var results=cenarios.map(function(cn){
+        var tm=Math.pow(1+cn.pct/100,1/12)-1;
+        var tot=vi;var apt2=vi;
+        for(var m2=0;m2<meses;m2++){tot=tot*(1+tm)+am;apt2+=am;}
+        var bars2=simBarsPJ(vi,am,meses,tm);
+        return{label:cn.label,vi:vi,aportes:apt2,bruto:tot,ir:0,liq:tot,bars:bars2,cor:cn.cor};
+      });
+      res.innerHTML=simResultHTMLPJ(results,infA,meses,objSel);
+    }
+  }
+
+  function simBarsPJ(vi,am,meses,taxaM){
+    var pts=[];var tot=vi;var apt=vi;
+    var step=Math.max(1,Math.floor(meses/12));
+    for(var m=0;m<meses;m+=step){
+      for(var j=0;j<step&&(m+j)<meses;j++){tot=tot*(1+taxaM)+am;apt+=am;}
+      pts.push({m:m+step,apt:apt,tot:tot});
+    }
+    return pts;
+  }
+
+  function simResultHTMLPJ(results,infA,meses,objSel){
+    var html="";
+    if(results.length>1){
+      html+="<div style='overflow-x:auto;-webkit-overflow-scrolling:touch;margin-bottom:12px'>"
+        +"<table style='width:100%;min-width:420px;border-collapse:collapse;font-size:11px'>"
+        +"<tr style='color:#9ca3af;text-align:left'><th style='padding:4px'>Cenário</th><th style='padding:4px'>Inicial</th><th style='padding:4px'>Aportes</th><th style='padding:4px'>Rendimento</th><th style='padding:4px'>Total</th></tr>";
+      results.forEach(function(r){
+        var rend=r.bruto-r.aportes;
+        html+="<tr style='border-top:1px solid #f0f0f0'><td style='padding:4px;font-weight:700;color:"+r.cor+"'>"+r.label+"</td>"
+          +"<td style='padding:4px'>"+R(r.vi)+"</td><td style='padding:4px'>"+R(r.aportes-r.vi)+"</td>"
+          +"<td style='padding:4px;color:"+(rend>=0?"#059669":"#dc2626")+"'>"+R(rend)+"</td><td style='padding:4px;font-weight:700'>"+R(r.bruto)+"</td></tr>";
+      });
+      html+="</table></div>";
+    }
+    results.forEach(function(r){
+      var rend=r.bruto-r.aportes;
+      var ganhoReal=rend;
+      if(infA>0&&meses>0){
+        var infTotal=Math.pow(1+infA/100,meses/12)-1;
+        ganhoReal=rend-(r.aportes*infTotal);
+      }
+      html+="<div style='background:#fff;border:1px solid var(--bd);border-radius:12px;padding:14px;margin-bottom:12px'>";
+      if(results.length>1)html+="<div style='font-size:11px;font-weight:700;color:"+r.cor+";margin-bottom:10px;text-transform:uppercase;letter-spacing:.5px'>"+r.label+"</div>";
+      html+="<div style='display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:11.5px;margin-bottom:12px'>";
+      function kpi(l,v,col){return "<div><div style='color:#9ca3af;font-size:10px'>"+l+"</div><div style='font-weight:700;color:"+(col||"var(--tx)")+"'>"+v+"</div></div>"}
+      html+=kpi("Valor inicial",R(r.vi))
+        +kpi("Total aportado",R(r.aportes-r.vi))
+        +kpi("Rendimento bruto",R(rend),rend>=0?"#059669":"#dc2626")
+        +(r.ir?kpi("Impostos","-"+R(r.ir),"#dc2626"):"")
+        +kpi("Valor líquido estimado",R(r.liq),"#059669")
+        +(infA>0?kpi("Ganho real (descontando inflação)",R(ganhoReal),ganhoReal>=0?"#059669":"#dc2626"):"");
+      html+="</div>";
+      if(objSel){
+        html+="<div style='font-size:11px;color:#6b7280;background:#fdf1ea;border-radius:8px;padding:8px 10px;margin-bottom:10px'>";
+        if(r.bruto>=objSel.target){
+          html+="🎯 Este cenário atinge a meta \""+objSel.name+"\" ("+R(objSel.target)+") dentro do prazo simulado.";
+        } else {
+          html+="🎯 Este cenário não atinge a meta \""+objSel.name+"\" ("+R(objSel.target)+") no prazo simulado — faltariam "+R(objSel.target-r.bruto)+".";
+        }
+        html+="</div>";
+      }
+      // Mini gráfico de barras SVG
+      if(r.bars&&r.bars.length){
+        var maxV=Math.max.apply(null,r.bars.map(function(b){return b.tot}))||1;
+        if(objSel&&objSel.target>maxV)maxV=objSel.target;
+        var w=280,h=60,bw=Math.max(4,Math.floor(w/r.bars.length)-2);
+        html+="<svg viewBox='0 0 "+w+" "+h+"' style='width:100%;height:60px;overflow:hidden'>";
+        r.bars.forEach(function(b,i){
+          var x=Math.floor(i*(w/r.bars.length));
+          var hApt=Math.floor((b.apt/maxV)*h);
+          var hTot=Math.floor((b.tot/maxV)*h);
+          html+="<rect x='"+x+"' y='"+(h-hApt)+"' width='"+bw+"' height='"+hApt+"' fill='#f3c9ac' opacity='.6'/>";
+          html+="<rect x='"+x+"' y='"+(h-hTot)+"' width='"+bw+"' height='"+(hTot-hApt)+"' fill='"+r.cor+"' opacity='.8'/>";
+        });
+        if(objSel&&objSel.target){
+          var metaY=h-Math.floor((objSel.target/maxV)*h);
+          html+="<line x1='0' y1='"+metaY+"' x2='"+w+"' y2='"+metaY+"' stroke='#dc2626' stroke-width='1' stroke-dasharray='4,3'/>";
+        }
+        html+="</svg>";
+        html+="<div style='display:flex;gap:12px;font-size:10px;color:#9ca3af;margin-top:4px'>"
+          +"<span>🟧 Aportado</span><span style='color:"+r.cor+"'>■ Rendimento</span>"+(objSel?"<span style='color:#dc2626'>┄ Meta</span>":"")+"</div>";
+      }
+      html+="</div>";
+    });
+    return html;
+  }
+}
+
+function rInvestSimPJ_render(c){
+  c.innerHTML="";rInvestPJ(c);
+}
+
+// Corrige bug pré-existente: chamada sem definição quebrava o toggle Fixo/Variável no Simulador PF
+// ── Sprint 5: salvar simulação como plano (item 12) — nunca movimenta dinheiro ──
+function salvarSimulacaoComoPlano(isPJ,tipo){
+  var vi=parseFloat(gi("sim-vi")?gi("sim-vi").value:0)||0;
+  var am=parseFloat(gi("sim-am")?gi("sim-am").value:0)||0;
+  var prazo=parseInt(gi("sim-prazo")?gi("sim-prazo").value:0)||0;
+  var unit=gi("sim-unit")?gi("sim-unit").value:"meses";
+  var objId=gi("sim-obj")?gi("sim-obj").value:"";
+  if(!vi||!prazo){alert("Preencha os campos da simulação antes de salvar como plano.");return}
+  if(!confirm("Este planejamento não movimenta dinheiro e não representa um investimento realizado.\n\nDeseja salvar mesmo assim?"))return;
+  var nome=prompt("Dê um nome para este plano:","Plano "+(tipo==="fixo"?"Renda Fixa":"Renda Variável"));
+  if(!nome)return;
+  var plan={id:Date.now(),ambiente:isPJ?"pj":"pf",nome:nome.trim(),tipo:tipo,valorInicial:vi,aporteMensal:am,prazo:prazo,unidade:unit,objetivoId:objId||"",createdAt:new Date().toISOString()};
+  if(tipo==="fixo"){
+    plan.rentTipo=gi("sim-rent")?gi("sim-rent").value:"prefixado";
+    plan.taxa=parseFloat(gi("sim-taxa")?gi("sim-taxa").value:0)||0;
+  } else {
+    plan.cenarioConservador=parseFloat(gi("sim-cons")?gi("sim-cons").value:4)||4;
+    plan.cenarioModerado=parseFloat(gi("sim-mod")?gi("sim-mod").value:8)||8;
+    plan.cenarioOtimista=parseFloat(gi("sim-otim")?gi("sim-otim").value:14)||14;
+  }
+  D.investPlans=D.investPlans||[];D.investPlans.push(plan);
+  sv();
+  alert("Plano salvo. Nenhum saldo foi alterado.");
+}
+
+function rInvestSim_render(c){
+  c.innerHTML="";rInvest(c);
 }
 
 
@@ -2851,6 +3851,86 @@ function oEditInv(idx,inv,isPJ){
   };
   brow.appendChild(bc);brow.appendChild(bs);bd.appendChild(brow);oM(true,"m2")
 }
+// ── Sprint 5: composição do objetivo + projeção (itens 4 e 6) ────────────────
+function verComposicaoObjetivo(obj,investVinculados,valorVinculado,isPJ){
+  var bd=gi("m2b");bd.innerHTML="";
+  var tt=ce("div","mt");tt.textContent=obj.icon+" "+obj.name;bd.appendChild(tt);
+  var restante=Math.max(0,obj.target-valorVinculado);
+  var pctReal=obj.target>0?(valorVinculado/obj.target*100):0;
+  var cor=isPJ?"#C4693A":"#4A6741";
+  var summary=ce("div");summary.style.cssText="background:#f9fafb;border-radius:10px;padding:12px;margin-bottom:12px";
+  summary.innerHTML="<div style='display:flex;justify-content:space-between;font-size:12px'><span>Meta</span><b>"+R(obj.target)+"</b></div>"
+    +"<div style='display:flex;justify-content:space-between;font-size:12px;margin-top:4px'><span>Acumulado</span><b style='color:"+cor+"'>"+R(valorVinculado)+"</b></div>"
+    +"<div style='display:flex;justify-content:space-between;font-size:12px;margin-top:4px'><span>Concluído</span><b>"+pctReal.toFixed(1)+"%</b></div>"
+    +"<div style='display:flex;justify-content:space-between;font-size:12px;margin-top:4px'><span>Restante</span><b>"+R(restante)+"</b></div>"
+    +(obj.deadline?"<div style='display:flex;justify-content:space-between;font-size:12px;margin-top:4px'><span>Prazo</span><b>"+obj.deadline+"</b></div>":"")
+    +(obj.aporteMensalPlanejado?"<div style='display:flex;justify-content:space-between;font-size:12px;margin-top:4px'><span>Aporte mensal planejado</span><b>"+R(obj.aporteMensalPlanejado)+"</b></div>":"");
+  bd.appendChild(summary);
+
+  var compTitle=ce("div");compTitle.style.cssText="font-size:11px;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px";compTitle.textContent="Composição";bd.appendChild(compTitle);
+  if(investVinculados.length||obj.saved){
+    investVinculados.forEach(function(inv){
+      var row=ce("div");row.style.cssText="display:flex;justify-content:space-between;font-size:12px;padding:6px 0;border-bottom:1px solid #f0f0f0";
+      row.innerHTML="<span>"+inv.nome+"</span><b>"+R(inv.valorAtual||inv.valorInicial||0)+"</b>";
+      bd.appendChild(row);
+    });
+    if(obj.saved){
+      var rowS=ce("div");rowS.style.cssText="display:flex;justify-content:space-between;font-size:12px;padding:6px 0;border-bottom:1px solid #f0f0f0;color:#6b7280";
+      rowS.innerHTML="<span>Valor livre vinculado</span><b>"+R(obj.saved)+"</b>";
+      bd.appendChild(rowS);
+    }
+    var rowT=ce("div");rowT.style.cssText="display:flex;justify-content:space-between;font-size:12px;padding:8px 0;font-weight:700";
+    rowT.innerHTML="<span>Total</span><b>"+R(valorVinculado)+"</b>";
+    bd.appendChild(rowT);
+  } else {
+    var noComp=ce("div");noComp.style.cssText="font-size:12px;color:#9ca3af;padding:8px 0";noComp.textContent="Nenhum investimento vinculado ainda.";bd.appendChild(noComp);
+  }
+
+  // Projeção (item 6) — estimativa, não garante resultado
+  var projTitle=ce("div");projTitle.style.cssText="font-size:11px;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:.5px;margin:16px 0 8px";projTitle.textContent="Projeção (estimativa)";bd.appendChild(projTitle);
+  function lbl(t){var l=ce("label","lbl");l.textContent=t;return l}
+  var g=ce("div");g.style.cssText="display:grid;grid-template-columns:1fr 1fr;gap:8px";
+  var amW=ce("div");amW.appendChild(lbl("Aporte mensal (R$)"));var amI=ce("input","inp");amI.id="proj-am";amI.type="number";amI.value=obj.aporteMensalPlanejado||0;amW.appendChild(amI);g.appendChild(amW);
+  var txW=ce("div");txW.appendChild(lbl("Rentabilidade estimada (% a.a.)"));var txI=ce("input","inp");txI.id="proj-taxa";txI.type="number";txI.value="10";txW.appendChild(txI);g.appendChild(txW);
+  bd.appendChild(g);
+  var projRes=ce("div");projRes.id="proj-res";projRes.style.cssText="font-size:12px;background:#f0f9ff;border-radius:8px;padding:10px;margin-top:10px";bd.appendChild(projRes);
+
+  function calcProj(){
+    var am=parseFloat(gi("proj-am").value)||0;
+    var taxaA=parseFloat(gi("proj-taxa").value)||0;
+    var taxaM=Math.pow(1+taxaA/100,1/12)-1;
+    if(restante<=0){projRes.innerHTML="🏆 Meta já atingida.";return}
+    if(am<=0&&taxaM<=0){projRes.innerHTML="Informe um aporte mensal ou rentabilidade para projetar.";return}
+    var v=valorVinculado,meses=0,max=1200;
+    while(v<obj.target&&meses<max){v=v*(1+taxaM)+am;meses++}
+    if(meses>=max){projRes.innerHTML="Com esses parâmetros, a meta não seria atingida em um prazo razoável. Considere aumentar o aporte.";return}
+    var anos=Math.floor(meses/12),mesesRest=meses%12;
+    var dataEstim=new Date();dataEstim.setMonth(dataEstim.getMonth()+meses);
+    var html="Com "+R(am)+"/mês a "+taxaA+"% a.a., a meta seria atingida em <b>"+(anos>0?anos+" ano(s) e ":"")+mesesRest+" mês(es)</b> (~"+dataEstim.toLocaleDateString("pt-BR",{month:"short",year:"numeric"})+").";
+    if(obj.deadline){
+      var dl=new Date(obj.deadline+"-01");
+      var mesesAteDeadline=Math.max(1,Math.round((dl-new Date())/(1000*60*60*24*30)));
+      var lo=0,hi=Math.max(obj.target,1);
+      for(var it=0;it<40;it++){
+        var mid=(lo+hi)/2;
+        var vv=valorVinculado;for(var m2=0;m2<mesesAteDeadline;m2++)vv=vv*(1+taxaM)+mid;
+        if(vv<obj.target)lo=mid;else hi=mid;
+      }
+      var necessario=hi;
+      html+="<br><br>Para bater a meta até <b>"+obj.deadline+"</b>, o aporte mensal necessário seria de aproximadamente <b>"+R(necessario)+"</b>"+(necessario>am?" (R$ "+R(necessario-am)+" a mais que o planejado atual)":"")+".";
+    }
+    html+="<div style='font-size:10px;color:#9ca3af;margin-top:8px'>Esta é uma estimativa e não garante resultados.</div>";
+    projRes.innerHTML=html;
+  }
+  amI.oninput=calcProj;txI.oninput=calcProj;
+
+  var brow=ce("div","brow");
+  var close=ce("button","btn bou");close.style.flex="1";close.textContent="Fechar";close.onclick=function(){oM(false,"m2")};
+  brow.appendChild(close);bd.appendChild(brow);
+  oM(true,"m2");
+  calcProj();
+}
+
 function oAddObj(){
   var bd=gi("m2b");bd.innerHTML="";
   var t=ce("div","mt");t.textContent="Novo objetivo";bd.appendChild(t);
@@ -2863,12 +3943,13 @@ function oAddObj(){
   var ts=ce("select","sel");ts.id="oj-tp";ts.style.marginBottom="8px";OBJ_TYPES.forEach(function(o){var op=ce("option");op.textContent=o;ts.appendChild(op)});bd.appendChild(ts);
   bd.appendChild(lbl("Valor necessário (R$)"));bd.appendChild(inp("oj-tgt","number","Ex: 10000"));
   bd.appendChild(lbl("Data limite"));var di=inp("oj-dt","month","");bd.appendChild(di);
+  bd.appendChild(lbl("Aporte mensal planejado (R$, opcional)"));bd.appendChild(inp("oj-am","number","Ex: 300"));
   var brow=ce("div","brow");
   var bc=ce("button","btn bou");bc.textContent="Cancelar";bc.onclick=function(){oM(false,"m2")};
   var bs=ce("button","btn bpf");bs.style.flex="2";bs.textContent="Criar objetivo";
   bs.onclick=function(){
     var nm=gi("oj-nm").value.trim();var tgt=parseFloat(gi("oj-tgt").value);if(!nm||!tgt)return;
-    (D.objectives=D.objectives||[]).push({id:Date.now(),name:nm,icon:gi("oj-ico").value||"🎯",type:gi("oj-tp").value,target:tgt,saved:0,deadline:gi("oj-dt").value});
+    (D.objectives=D.objectives||[]).push({id:Date.now(),name:nm,icon:gi("oj-ico").value||"🎯",type:gi("oj-tp").value,target:tgt,saved:0,deadline:gi("oj-dt").value,aporteMensalPlanejado:parseFloat(gi("oj-am").value)||0,status:"ativo"});
     sv();oM(false,"m2");if(tab==="config")nav("config");else nav("invest")
   };
   brow.appendChild(bc);brow.appendChild(bs);bd.appendChild(brow);oM(true,"m2")
@@ -3578,7 +4659,33 @@ function rHistFn(c,isPF,mk){
     var db=ce("button","db");db.textContent="🗑";(function(p,id){db.onclick=function(){if(confirm("Excluir este lançamento?"))delTx(p,id)}})(isPF?"pf":"pj",tx.id);
     rw.appendChild(eb);rw.appendChild(db);list.appendChild(rw)
   });
-  card.appendChild(list);c.appendChild(card)
+  card.appendChild(list);c.appendChild(card);
+
+  // Item 3 (Sprint 4): a conta também mostra a movimentação de investimento correspondente.
+  // Mesmo registro de D.invMovs, só exibido aqui também — sem criar evento duplicado.
+  var ambienteAtual=isPF?"pf":"pj";
+  var invRelated=(D.invMovs||[]).filter(function(m){
+    return m.ambiente===ambienteAtual&&m.status==="concluido"&&m.data&&m.data.startsWith(mk);
+  });
+  if(invRelated.length){
+    var invArr=isPF?(D.investments||[]):(D.pjInvestments||[]);
+    function nomeInv(id){var r=invArr.find(function(x){return String(x.id)===String(id)});return r?r.nome:"—"}
+    function nomeConta(id){var a=(D.accounts||[]).find(function(x){return String(x.id)===String(id)});return a?a.name:"—"}
+    var invCard=ce("div","card");
+    var ihsh=ce("div","sh");ihsh.innerHTML="<div class='st'>Movimentações de investimento</div>";invCard.appendChild(ihsh);
+    var ilist=ce("div","txl");
+    invRelated.slice().sort(function(a,b){return b.id-a.id}).forEach(function(m){
+      var isAporte=m.tipo==="APORTE_INVESTIMENTO";
+      var rw=ce("div","txr");
+      var desc=isAporte?("Transferência para investimento — "+nomeInv(m.investimentoId)):("Resgate de investimento — "+nomeInv(m.investimentoId));
+      var conta=isAporte?nomeConta(m.contaOrigemId):nomeConta(m.contaDestinoId);
+      rw.innerHTML="<div class='txi' style='background:"+(isAporte?"#fee2e2":"#d1fae5")+"'>"+(isAporte?"📥":"📤")+"</div>"
+        +"<div class='txin'><div class='txd'>"+desc+"</div><div class='txm'>"+conta+" · "+m.data+"</div></div>"
+        +"<span class='txa' style='color:"+(isAporte?"#dc2626":"#059669")+"'>"+(isAporte?"-":"+")+R(isAporte?m.valor:m.valorLiquido)+"</span>";
+      ilist.appendChild(rw);
+    });
+    invCard.appendChild(ilist);c.appendChild(invCard);
+  }
 }
 
 function editTxM(p,tx){
@@ -6597,7 +7704,7 @@ function rInvestPJ(c){
     var tb=ce("button");
     tb.style.cssText="flex:1;padding:8px;border:none;border-radius:9px;font-family:Poppins,sans-serif;font-size:12px;font-weight:600;cursor:pointer;transition:.2s;";
     tb.textContent=tab==="carteira"?"📊 Minha Carteira":"🧮 Simulador";
-    if(_invTab===tab){tb.style.cssText+=";background:#fff;color:#4A6741;box-shadow:0 1px 4px rgba(0,0,0,.1)"}
+    if(_invTab===tab){tb.style.cssText+=";background:#fff;color:#C4693A;box-shadow:0 1px 4px rgba(0,0,0,.1)"}
     else{tb.style.cssText+=";background:transparent;color:#6b7280"}
     tb.onclick=function(){window._invTabPJ=tab;nav("invest")};
     tabBar.appendChild(tb);
@@ -6605,6 +7712,11 @@ function rInvestPJ(c){
   c.appendChild(tabBar);
 
   if(_invTab==="simulador"){rInvestSimPJ(c);return;}
+
+  var checkWrapPJ=ce("div");checkWrapPJ.style.cssText="text-align:right;margin-bottom:8px";
+  var checkBtnPJ=ce("button");checkBtnPJ.style.cssText="background:none;border:none;color:#9ca3af;cursor:pointer;font-size:10px;font-family:inherit;text-decoration:underline;padding:0";
+  checkBtnPJ.textContent="🔍 Verificar consistência";checkBtnPJ.onclick=verificarConsistencia;
+  checkWrapPJ.appendChild(checkBtnPJ);c.appendChild(checkWrapPJ);
 
   // ═══════════════════════════════════════════════════════════════
   // ÁREA 1 — MINHA CARTEIRA
@@ -6640,7 +7752,7 @@ function rInvestPJ(c){
 
   // Botão novo investimento
   var addWrap=ce("div");addWrap.style.cssText="display:flex;justify-content:flex-end;margin-bottom:10px";
-  var addBtn=ce("button","btn bpf");addBtn.textContent="+ Novo investimento";
+  var addBtn=ce("button","btn bpj");addBtn.textContent="+ Novo investimento";
   addBtn.onclick=function(){oAddInvestimentoPJ()};addWrap.appendChild(addBtn);c.appendChild(addWrap);
 
   // Filtros
@@ -6648,7 +7760,7 @@ function rInvestPJ(c){
   var filtBar=ce("div");filtBar.style.cssText="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px";
   [{k:"todos",l:"Todos"},{k:"fixo",l:"Renda fixa"},{k:"variavel",l:"Renda variável"}].forEach(function(f){
     var fb=ce("button");
-    fb.style.cssText="padding:5px 12px;border-radius:20px;border:1.5px solid "+(f.k===_filt?"#4A6741":"var(--bd)")+";background:"+(f.k===_filt?"#4A6741":"transparent")+";color:"+(f.k===_filt?"#fff":"var(--mu)")+";font-size:11px;font-weight:500;cursor:pointer;font-family:Poppins,sans-serif";
+    fb.style.cssText="padding:5px 12px;border-radius:20px;border:1.5px solid "+(f.k===_filt?"#C4693A":"var(--bd)")+";background:"+(f.k===_filt?"#C4693A":"transparent")+";color:"+(f.k===_filt?"#fff":"var(--mu)")+";font-size:11px;font-weight:500;cursor:pointer;font-family:Poppins,sans-serif";
     fb.textContent=f.l;
     (function(k){fb.onclick=function(){window._invFiltPJ=k;nav("invest")}})(f.k);
     filtBar.appendChild(fb);
@@ -6672,11 +7784,12 @@ function rInvestPJ(c){
       var rend2=(inv.valorAtual||inv.valorInicial||0)-(inv.valorInicial||0);
       var rPct2=inv.valorInicial?rend2/inv.valorInicial*100:0;
       var card=ce("div","card");card.style.marginBottom="8px";
+      if(inv.status==="encerrado")card.style.opacity="0.65";
 
       // Header
       var hdr=ce("div");hdr.style.cssText="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px";
       var left=ce("div");
-      left.innerHTML="<div style='font-size:13px;font-weight:700;color:var(--tx)'>"+(inv.nome||"—")+"</div>"
+      left.innerHTML="<div style='font-size:13px;font-weight:700;color:var(--tx)'>"+(inv.nome||"—")+(inv.status==="encerrado"?" <span style='font-size:9px;font-weight:700;color:#9ca3af;border:1px solid #d1d5db;border-radius:20px;padding:1px 7px;vertical-align:middle'>ENCERRADO</span>":"")+"</div>"
         +"<div style='font-size:11px;color:#9ca3af'>"+(inv.tipo==="fixo"?"🔒 Renda fixa":"📊 Renda variável")+(inv.inst?" · "+inv.inst:"")+"</div>";
       var right=ce("div");right.style.textAlign="right";
       right.innerHTML="<div style='font-family:Cormorant Garamond,serif;font-size:18px;color:var(--tx)'>"+R(inv.valorAtual||inv.valorInicial||0)+"</div>"
@@ -6688,8 +7801,11 @@ function rInvestPJ(c){
       function detail(label,val){return "<div><div style='color:#9ca3af;font-size:10px'>"+label+"</div><div style='font-weight:600;color:var(--tx)'>"+val+"</div></div>"}
       grid.innerHTML=detail("Aplicado",R(inv.valorInicial||0))
         +detail("Aplicado em",inv.dataAplicacao||"—")
-        +(inv.tipo==="fixo"?detail("Rentabilidade",inv.rentTipo?(inv.rentTipo+(inv.taxa?" "+inv.taxa+"% a.a.":"")):"—"):detail("Qtd × Preço médio",(inv.qtd||"—")+" × "+(inv.precoMedio?R(inv.precoMedio):"—")))
-        +detail("Vencimento",inv.vencimento||"Sem vencimento")
+        +(inv.tipo==="fixo"?detail("Rentabilidade",rentDetailLabel(inv)):detail("Qtd × Preço médio",(inv.qtd||"—")+" × "+(inv.precoMedio?R(inv.precoMedio):"—")))
+        +(inv.tipo==="fixo"?detail("Vencimento",inv.vencimento||"Sem vencimento"):"")
+        +(inv.tipo==="fixo"&&inv.modalidade?detail("Modalidade",MODAL_LBL[inv.modalidade]||inv.modalidade):"")
+        +(inv.tipo==="fixo"&&inv.liquidez?detail("Liquidez",LIQ_LBL[inv.liquidez]||inv.liquidez):"")
+        +(inv.tipo==="fixo"&&inv.isento?detail("IR","Isento"):"")
         +(inv.objetivo?detail("Objetivo",inv.objetivo):"")
         +(inv.updatedAt?detail("Atualizado",new Date(inv.updatedAt).toLocaleString("pt-BR")):"");
       card.appendChild(grid);
@@ -6704,47 +7820,81 @@ function rInvestPJ(c){
         card.appendChild(estimTag);
       }
 
+      // Vincular valor inicial (opcional, item 6 — só aparece antes do 1º movimento real)
+      if((inv.valorInicial||0)>0&&!hasInvMovs(inv.id)&&inv.status!=="encerrado"){
+        var vinc=ce("div");vinc.style.cssText="font-size:10.5px;margin-bottom:8px";
+        var vincBtn=ce("button");vincBtn.style.cssText="background:none;border:none;color:#0284c7;cursor:pointer;font-size:10.5px;font-family:inherit;text-decoration:underline;padding:0";
+        vincBtn.textContent="Vincular valor inicial a uma conta de origem";
+        (function(ii,iv){vincBtn.onclick=function(){oVincularValorInicialPJ(ii,iv)}})(realIdx,inv);
+        vinc.appendChild(vincBtn);card.appendChild(vinc);
+      }
+      var histLinkPJ=ce("div");histLinkPJ.style.cssText="font-size:10.5px;margin-bottom:8px";
+      var histBtnPJ=ce("button");histBtnPJ.style.cssText="background:none;border:none;color:#6b7280;cursor:pointer;font-size:10.5px;font-family:inherit;text-decoration:underline;padding:0";
+      histBtnPJ.textContent="📜 Ver histórico completo";
+      (function(ii){histBtnPJ.onclick=function(){verHistoricoInvestimento(ii,true)}})(realIdx);
+      histLinkPJ.appendChild(histBtnPJ);card.appendChild(histLinkPJ);
+
       // Botões
       var brow=ce("div","brow");
+      if(inv.status!=="encerrado"){
+        var apBtn=ce("button","btn");apBtn.style.cssText="font-size:11px;padding:6px 10px;background:#f0fdf4;color:#059669;border:1px solid #bbf7d0";
+        apBtn.textContent="📥 Aportar";
+        (function(ii,iv){apBtn.onclick=function(){oAportarInvestimentoPJ(ii,iv)}})(realIdx,inv);
+        brow.appendChild(apBtn);
+        var rgBtn=ce("button","btn");rgBtn.style.cssText="font-size:11px;padding:6px 10px;background:#fff7ed;color:#c2410c;border:1px solid #fed7aa";
+        rgBtn.textContent="📤 Resgatar";
+        (function(ii,iv){rgBtn.onclick=function(){oResgatarInvestimentoPJ(ii,iv)}})(realIdx,inv);
+        brow.appendChild(rgBtn);
+      }
       var updBtn=ce("button","btn");updBtn.style.cssText="font-size:11px;padding:6px 10px;background:#f0f9ff;color:#0284c7;border:1px solid #bae6fd";
       updBtn.textContent="💰 Atualizar valor";
       (function(ii,iv){updBtn.onclick=function(){oAtualizarValorPJ(ii,iv)}})(realIdx,inv);
       var editBtn=ce("button","eb");editBtn.textContent="✏️";
       (function(ii,iv){editBtn.onclick=function(){oEditInvestimentoPJ(ii,iv)}})(realIdx,inv);
       var delBtn=ce("button","db");delBtn.textContent="🗑";
-      (function(ii){delBtn.onclick=function(){if(confirm("Excluir este investimento?")){D.pjInvestments.splice(ii,1);sv();nav("invest")}}})(realIdx);
+      (function(ii){delBtn.onclick=function(){delInvestimento(ii,true)}})(realIdx);
       brow.appendChild(updBtn);brow.appendChild(editBtn);brow.appendChild(delBtn);card.appendChild(brow);
       c.appendChild(card);
     });
   }
 
   // Objetivos financeiros
-  var objCard=ce("div","card");
-  var osh=ce("div","sh");osh.innerHTML="<div class='st'>Objetivos financeiros</div>";
-  var addOB=ce("button");addOB.style.cssText="font-size:11px;color:#4A6741;background:none;border:none;cursor:pointer;font-weight:600;font-family:inherit";
-  addOB.textContent="+ Novo";addOB.onclick=function(){oAddObj()};osh.appendChild(addOB);objCard.appendChild(osh);
+  var objCard=ce("div","card");objCard.style.padding="20px";
+  var osh=ce("div","sh");osh.style.marginBottom="14px";osh.innerHTML="<div style='font-size:13px;font-weight:700;color:var(--tx)'>Objetivos financeiros</div>";
+  var addOB=ce("button");addOB.style.cssText="font-size:11px;color:#C4693A;background:none;border:none;cursor:pointer;font-weight:600;font-family:inherit";
+  addOB.textContent="+ Novo";addOB.onclick=function(){oAddObjPJ()};osh.appendChild(addOB);objCard.appendChild(osh);
   if(objs.length){
     objs.forEach(function(obj,i){
-      var investVinculados=carteira.filter(function(inv){return inv.objetivo===obj.name});
-      var valorVinculado=investVinculados.reduce(function(s,inv){return s+(inv.valorAtual||inv.valorInicial||0)},0);
-      var pct=obj.target>0?Math.min((valorVinculado/obj.target)*100,100):0;
-      var done=pct>=100;
-      var box=ce("div");box.style.cssText="background:#fafafe;border-radius:10px;padding:11px;border:1.5px solid "+(done?"#05966933":"#eaf0e8")+";margin-bottom:9px";
+      var investVinculados=carteira.filter(function(inv){return inv.objetivoId?String(inv.objetivoId)===String(obj.id):inv.objetivo===obj.name});
+      var valorVinculado=investVinculados.reduce(function(s,inv){return s+(inv.valorAtual||inv.valorInicial||0)},0)+(obj.saved||0);
+      var pctReal=obj.target>0?(valorVinculado/obj.target)*100:0;
+      var pct=Math.min(pctReal,100);
+      var restante=Math.max(0,obj.target-valorVinculado);
+      var done=pctReal>=100;
+      var box=ce("div");box.style.cssText="background:#fafafe;border-radius:10px;padding:11px;border:1.5px solid "+(done?"#05966933":"#eaf0e8")+";margin-bottom:9px;cursor:pointer";
       var topRow=ce("div");topRow.style.cssText="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px";
       topRow.innerHTML="<div style='display:flex;align-items:center;gap:7px'><span style='font-size:18px'>"+obj.icon+"</span>"
         +"<div><div style='font-size:12px;font-weight:600'>"+obj.name+(done?" 🏆":"")+"</div>"
-        +"<div style='font-size:10px;color:#9ca3af'>"+obj.type+"</div></div></div>"
-        +"<div style='text-align:right'><div style='font-family:Cormorant Garamond,serif;font-size:16px;color:"+(done?"#059669":"#4A6741")+"'>"+R(valorVinculado)+"</div>"
-        +"<div style='font-size:10px;color:#9ca3af'>de "+R(obj.target)+"</div></div>";
-      box.appendChild(topRow);box.appendChild(pb(pct,done?"#059669":"#4A6741",5));
+        +"<div style='font-size:10px;color:#9ca3af'>"+obj.type+(obj.deadline?" · até "+obj.deadline:"")+"</div></div></div>"
+        +"<div style='text-align:right'><div style='font-family:Cormorant Garamond,serif;font-size:16px;color:"+(done?"#059669":"#C4693A")+"'>"+R(valorVinculado)+"</div>"
+        +"<div style='font-size:10px;color:#9ca3af'>de "+R(obj.target)+" · "+pctReal.toFixed(1)+"%</div></div>";
+      box.appendChild(topRow);box.appendChild(pb(pct,done?"#059669":"#C4693A",5));
+      var meta=ce("div");meta.style.cssText="display:flex;justify-content:space-between;font-size:10px;color:#9ca3af;margin-top:6px";
+      meta.innerHTML="<span>"+investVinculados.length+" investimento"+(investVinculados.length!==1?"s":"")+" vinculado"+(investVinculados.length!==1?"s":"")+"</span>"
+        +"<span>"+(done?"Meta concluída":"Restam "+R(restante))+"</span>";
+      box.appendChild(meta);
+      if(obj.aporteMensalPlanejado)box.insertAdjacentHTML("beforeend","<div style='font-size:10px;color:#9ca3af;margin-top:2px'>Aporte mensal planejado: "+R(obj.aporteMensalPlanejado)+"</div>");
+      (function(o,iv,vv){box.onclick=function(e){if(e.target.tagName==="BUTTON")return;verComposicaoObjetivo(o,iv,vv,true)}})(obj,investVinculados,valorVinculado);
       var br=ce("div","brow");
       var delB=ce("button","btn bou");delB.style.cssText="font-size:12px;padding:7px 10px";delB.textContent="🗑";
-      (function(ii){delB.onclick=function(){D.pjObjectives.splice(ii,1);sv();nav("invest")}})(i);
+      (function(ii){delB.onclick=function(e){e.stopPropagation();D.pjObjectives.splice(ii,1);sv();nav("invest")}})(i);
       br.appendChild(delB);box.appendChild(br);objCard.appendChild(box);
     });
   } else {
-    var emO=ce("div");emO.style.cssText="text-align:center;padding:16px;color:#9ca3af;font-size:12px";
-    emO.textContent="Nenhum objetivo. Clique em + Novo para criar.";objCard.appendChild(emO);
+    var emO=ce("div");emO.style.cssText="text-align:center;padding:28px 16px";
+    emO.innerHTML="<div style='font-size:14px;font-weight:600;color:var(--tx);margin-bottom:8px'>Você ainda não tem nenhum objetivo financeiro cadastrado.</div>"
+      +"<div style='font-size:12px;color:#9ca3af'>Cadastre um objetivo para transformar seus investimentos em planos reais.</div>";
+    objCard.appendChild(emO);
   }
   c.appendChild(objCard);
 
@@ -6795,33 +7945,70 @@ function oAddInvestimentoPJ(){
   });
   bd.appendChild(typeSel);
   var formArea=ce("div");formArea.id="inv-form-pj";bd.appendChild(formArea);
-  function inp(id,placeholder,type){type=type||"text";var i=ce("input","inp");i.id=id;i.placeholder=placeholder;i.type=type;i.style.marginBottom="8px";return i}
+  function inp(id,placeholder,type,val){type=type||"text";var i=ce("input","inp");i.id=id;i.placeholder=placeholder;i.type=type;if(val!==undefined)i.value=val;i.style.marginBottom="8px";return i}
   function lbl(txt){var l=ce("label","lbl");l.textContent=txt;return l}
   function sel(id,opts){var s=ce("select","inp sel");s.id=id;s.style.marginBottom="8px";opts.forEach(function(o){var op=ce("option");op.value=o.v;op.textContent=o.l;s.appendChild(op)});return s}
+  function objOptionsPJ(){
+    var objs=D.pjObjectives||[];
+    if(!objs.length)return[{v:"",l:"Nenhum objetivo financeiro disponível."}];
+    return[{v:"",l:"Nenhum"}].concat(objs.map(function(o){return{v:o.id,l:o.icon+" "+o.name}}));
+  }
+  function originNotePJ(){
+    var n=ce("div");n.style.cssText="font-size:10.5px;color:#6b7280;background:#f9fafb;border-radius:8px;padding:8px 10px;margin:4px 0 10px";
+    n.textContent="💡 O vínculo com a conta de origem será configurado na etapa de aporte.";
+    return n;
+  }
   function renderFormPJ(){
     formArea.innerHTML="";
     if(_tipo==="fixo"){
-      formArea.appendChild(lbl("Nome do investimento"));formArea.appendChild(inp("ii-nome-pj","Ex: CDB Nubank 13% a.a."));
-      formArea.appendChild(lbl("Instituição"));formArea.appendChild(inp("ii-inst-pj","Ex: Nubank, XP"));
-      formArea.appendChild(lbl("Valor inicial (R$)"));formArea.appendChild(inp("ii-val-pj","0,00","number"));
-      formArea.appendChild(lbl("Data da aplicação"));formArea.appendChild(inp("ii-data-pj","","date"));
+      formArea.appendChild(lbl("Nome do investimento *"));formArea.appendChild(inp("ii-nome-pj","Ex: CDB Nubank 13% a.a."));
+      formArea.appendChild(lbl("Modalidade"));
+      formArea.appendChild(sel("ii-modal-pj",[{v:"cdb",l:"CDB"},{v:"rdb",l:"RDB"},{v:"lci",l:"LCI"},{v:"lca",l:"LCA"},{v:"tesouro",l:"Tesouro Direto"},{v:"debenture",l:"Debênture"},{v:"poupanca",l:"Poupança"},{v:"fundo_rf",l:"Fundo de renda fixa"},{v:"outro",l:"Outro"}]));
+      formArea.appendChild(lbl("Instituição *"));formArea.appendChild(inp("ii-inst-pj","Ex: Nubank, XP"));
+      formArea.appendChild(originNotePJ());
+      formArea.appendChild(lbl("Valor inicial (R$) *"));formArea.appendChild(inp("ii-val-pj","0,00","number"));
+      formArea.appendChild(lbl("Data da aplicação *"));formArea.appendChild(inp("ii-data-pj","","date"));
       formArea.appendChild(lbl("Tipo de rentabilidade"));
-      formArea.appendChild(sel("ii-rent-pj",[{v:"prefixado",l:"Prefixado"},{v:"cdi",l:"% do CDI"},{v:"ipca",l:"IPCA + taxa"},{v:"outro",l:"Outro"}]));
-      formArea.appendChild(lbl("Taxa (% a.a.)"));formArea.appendChild(inp("ii-taxa-pj","Ex: 13","number"));
+      var rSelPJ=sel("ii-rent-pj",[{v:"prefixado",l:"Prefixado"},{v:"cdi_pct",l:"% do CDI"},{v:"ipca_mais",l:"IPCA + taxa"},{v:"personalizado",l:"Taxa personalizada"}]);
+      formArea.appendChild(rSelPJ);
+      var rentFieldPJ=ce("div");rentFieldPJ.id="ii-rent-field-pj";formArea.appendChild(rentFieldPJ);
+      function renderRentFieldPJ(){
+        rentFieldPJ.innerHTML="";
+        var rv=gi("ii-rent-pj")?gi("ii-rent-pj").value:"prefixado";
+        if(rv==="prefixado"){rentFieldPJ.appendChild(lbl("Taxa anual (%)"));rentFieldPJ.appendChild(inp("ii-taxa-pj","Ex: 13","number"));}
+        else if(rv==="cdi_pct"){rentFieldPJ.appendChild(lbl("Percentual do CDI (%)"));rentFieldPJ.appendChild(inp("ii-cdi-pj","Ex: 110","number"));}
+        else if(rv==="ipca_mais"){rentFieldPJ.appendChild(lbl("Taxa adicional ao IPCA (% a.a.)"));rentFieldPJ.appendChild(inp("ii-ipca-pj","Ex: 5","number"));}
+        else{rentFieldPJ.appendChild(lbl("Descreva a taxa personalizada"));rentFieldPJ.appendChild(inp("ii-taxaperso-pj","Ex: IGP-M + 6% a.a."));}
+      }
+      rSelPJ.onchange=renderRentFieldPJ;renderRentFieldPJ();
       formArea.appendChild(lbl("Vencimento (opcional)"));formArea.appendChild(inp("ii-venc-pj","","date"));
+      formArea.appendChild(lbl("Liquidez"));
+      formArea.appendChild(sel("ii-liq-pj",[{v:"diaria",l:"Diária"},{v:"vencimento",l:"No vencimento"},{v:"outro",l:"Outro"}]));
+      var irWPJ=ce("div");irWPJ.style.cssText="display:flex;align-items:center;gap:8px;margin:4px 0 10px";
+      var irCbPJ=ce("input");irCbPJ.type="checkbox";irCbPJ.id="ii-isento-pj";
+      var irLPJ=ce("label");irLPJ.htmlFor="ii-isento-pj";irLPJ.style.cssText="font-size:12px;color:#6b7280";irLPJ.textContent="Isento de Imposto de Renda";
+      irWPJ.appendChild(irCbPJ);irWPJ.appendChild(irLPJ);formArea.appendChild(irWPJ);
       formArea.appendChild(lbl("Objetivo (opcional)"));
-      formArea.appendChild(sel("ii-obj-pj",[{v:"",l:"Nenhum"}].concat((D.pjObjectives||[]).map(function(o){return{v:o.name,l:o.icon+" "+o.name}}))));
+      formArea.appendChild(sel("ii-obj-pj",objOptionsPJ()));
+      formArea.appendChild(lbl("Observação (opcional)"));var obsPJ=ce("textarea","inp");obsPJ.id="ii-obs-pj";obsPJ.rows=2;obsPJ.style.marginBottom="8px";formArea.appendChild(obsPJ);
     } else {
-      formArea.appendChild(lbl("Nome do ativo"));formArea.appendChild(inp("ii-nome-pj","Ex: PETR4, HGLG11"));
-      formArea.appendChild(lbl("Tipo"));
-      formArea.appendChild(sel("ii-subtipo-pj",[{v:"acao",l:"Ação"},{v:"fii",l:"Fundo Imobiliário"},{v:"etf",l:"ETF"},{v:"fundo",l:"Fundo"},{v:"outro",l:"Outro"}]));
-      formArea.appendChild(lbl("Instituição"));formArea.appendChild(inp("ii-inst-pj","Ex: Clear, XP"));
-      formArea.appendChild(lbl("Quantidade"));formArea.appendChild(inp("ii-qtd-pj","0","number"));
-      formArea.appendChild(lbl("Preço médio (R$)"));formArea.appendChild(inp("ii-preco-pj","0,00","number"));
-      formArea.appendChild(lbl("Data da compra"));formArea.appendChild(inp("ii-data-pj","","date"));
+      formArea.appendChild(lbl("Nome ou código do ativo *"));formArea.appendChild(inp("ii-nome-pj","Ex: PETR4, HGLG11"));
+      formArea.appendChild(lbl("Tipo do ativo"));
+      formArea.appendChild(sel("ii-subtipo-pj",[{v:"acao",l:"Ação"},{v:"fii",l:"Fundo Imobiliário"},{v:"etf",l:"ETF"},{v:"fundo",l:"Fundo"},{v:"bdr",l:"BDR"},{v:"cripto",l:"Criptoativo"},{v:"outro",l:"Outro"}]));
+      formArea.appendChild(lbl("Instituição/corretora *"));formArea.appendChild(inp("ii-inst-pj","Ex: Clear, XP"));
+      formArea.appendChild(originNotePJ());
+      formArea.appendChild(lbl("Quantidade"));var qtdIPJ=inp("ii-qtd-pj","0","number");formArea.appendChild(qtdIPJ);
+      formArea.appendChild(lbl("Preço médio (R$)"));var precoIPJ=inp("ii-preco-pj","0,00","number");formArea.appendChild(precoIPJ);
+      formArea.appendChild(lbl("Valor inicialmente investido (R$) *"));var valIPJ=inp("ii-val-pj","0,00","number");formArea.appendChild(valIPJ);
+      function recalcPJ(){var q=parseFloat(qtdIPJ.value)||0,p=parseFloat(precoIPJ.value)||0;if(q&&p)valIPJ.value=(q*p).toFixed(2)}
+      qtdIPJ.oninput=recalcPJ;precoIPJ.oninput=recalcPJ;
+      formArea.appendChild(lbl("Data da compra *"));formArea.appendChild(inp("ii-data-pj","","date"));
       formArea.appendChild(lbl("Objetivo (opcional)"));
-      formArea.appendChild(sel("ii-obj-pj",[{v:"",l:"Nenhum"}].concat((D.pjObjectives||[]).map(function(o){return{v:o.name,l:o.icon+" "+o.name}}))));
+      formArea.appendChild(sel("ii-obj-pj",objOptionsPJ()));
+      formArea.appendChild(lbl("Observação (opcional)"));var obs2PJ=ce("textarea","inp");obs2PJ.id="ii-obs-pj";obs2PJ.rows=2;obs2PJ.style.marginBottom="8px";formArea.appendChild(obs2PJ);
     }
+    formArea.appendChild(lbl("Status"));
+    formArea.appendChild(sel("ii-status-pj",[{v:"ativo",l:"Ativo"},{v:"encerrado",l:"Encerrado"}]));
   }
   renderFormPJ();
   var brow=ce("div","brow");
@@ -6831,19 +8018,34 @@ function oAddInvestimentoPJ(){
     var nome=gi("ii-nome-pj")?gi("ii-nome-pj").value.trim():"";
     var inst=gi("ii-inst-pj")?gi("ii-inst-pj").value.trim():"";
     var data=gi("ii-data-pj")?gi("ii-data-pj").value:"";
+    var val=parseFloat(gi("ii-val-pj")?gi("ii-val-pj").value:0)||0;
     var obj=gi("ii-obj-pj")?gi("ii-obj-pj").value:"";
     if(!nome){alert("Informe o nome do investimento.");return}
-    var inv={id:Date.now(),isAsset:true,tipo:_tipo,nome:nome,inst:inst,dataAplicacao:data,objetivo:obj};
+    if(!inst){alert("Informe a instituição.");return}
+    if(!data){alert("Informe uma data válida.");return}
+    if(!val||val<=0){alert("Informe um valor maior que zero.");return}
+    var objObjPJ=(D.pjObjectives||[]).find(function(o){return String(o.id)===String(obj)});
+    var inv={id:Date.now(),isAsset:true,tipo:_tipo,nome:nome,inst:inst,dataAplicacao:data,
+      objetivoId:obj||"",objetivo:objObjPJ?objObjPJ.name:"",
+      observacao:gi("ii-obs-pj")?gi("ii-obs-pj").value.trim():"",
+      status:gi("ii-status-pj")?gi("ii-status-pj").value:"ativo",
+      historico:[]};
     if(_tipo==="fixo"){
-      inv.valorInicial=parseFloat(gi("ii-val-pj")?gi("ii-val-pj").value:0)||0;
+      inv.modalidade=gi("ii-modal-pj")?gi("ii-modal-pj").value:"outro";
+      inv.valorInicial=val;
       inv.rentTipo=gi("ii-rent-pj")?gi("ii-rent-pj").value:"prefixado";
-      inv.taxa=parseFloat(gi("ii-taxa-pj")?gi("ii-taxa-pj").value:0)||0;
+      if(inv.rentTipo==="prefixado")inv.taxa=parseFloat(gi("ii-taxa-pj")?gi("ii-taxa-pj").value:0)||0;
+      else if(inv.rentTipo==="cdi_pct")inv.cdiPct=parseFloat(gi("ii-cdi-pj")?gi("ii-cdi-pj").value:0)||0;
+      else if(inv.rentTipo==="ipca_mais")inv.ipcaTaxa=parseFloat(gi("ii-ipca-pj")?gi("ii-ipca-pj").value:0)||0;
+      else inv.taxaPersonalizada=gi("ii-taxaperso-pj")?gi("ii-taxaperso-pj").value.trim():"";
       inv.vencimento=gi("ii-venc-pj")?gi("ii-venc-pj").value:"";
+      inv.liquidez=gi("ii-liq-pj")?gi("ii-liq-pj").value:"outro";
+      inv.isento=gi("ii-isento-pj")?gi("ii-isento-pj").checked:false;
     } else {
       inv.subtipo=gi("ii-subtipo-pj")?gi("ii-subtipo-pj").value:"acao";
       inv.qtd=parseFloat(gi("ii-qtd-pj")?gi("ii-qtd-pj").value:0)||0;
       inv.precoMedio=parseFloat(gi("ii-preco-pj")?gi("ii-preco-pj").value:0)||0;
-      inv.valorInicial=inv.qtd*inv.precoMedio;
+      inv.valorInicial=val;
     }
     D.pjInvestments=D.pjInvestments||[];D.pjInvestments.push(inv);sv();oM(false,"m2");nav("invest");
   };
@@ -6855,30 +8057,80 @@ function oEditInvestimentoPJ(idx,inv){
   var tt=ce("div","mt");tt.textContent="Editar investimento — PJ";bd.appendChild(tt);
   function inp(id,placeholder,val,type){type=type||"text";var i=ce("input","inp");i.id=id;i.placeholder=placeholder;i.value=val||"";i.type=type;i.style.marginBottom="8px";return i}
   function lbl(txt){var l=ce("label","lbl");l.textContent=txt;return l}
-  bd.appendChild(lbl("Nome"));bd.appendChild(inp("ei-nome-pj","Nome",inv.nome));
-  bd.appendChild(lbl("Instituição"));bd.appendChild(inp("ei-inst-pj","Instituição",inv.inst));
+  function sel(id,opts,cur){var s=ce("select","inp sel");s.id=id;s.style.marginBottom="8px";opts.forEach(function(o){var op=ce("option");op.value=o.v;op.textContent=o.l;if(o.v===cur)op.selected=true;s.appendChild(op)});return s}
+  bd.appendChild(lbl("Nome *"));bd.appendChild(inp("ei-nome-pj","Nome",inv.nome));
+  bd.appendChild(lbl("Instituição *"));bd.appendChild(inp("ei-inst-pj","Instituição",inv.inst));
+  bd.appendChild(lbl("Data da aplicação *"));bd.appendChild(inp("ei-data-pj","",inv.dataAplicacao,"date"));
   if(inv.tipo==="fixo"){
-    bd.appendChild(lbl("Valor inicial (R$)"));bd.appendChild(inp("ei-val-pj","",inv.valorInicial,"number"));
-    bd.appendChild(lbl("Taxa (% a.a.)"));bd.appendChild(inp("ei-taxa-pj","",inv.taxa,"number"));
+    bd.appendChild(lbl("Modalidade"));bd.appendChild(sel("ei-modal-pj",[{v:"cdb",l:"CDB"},{v:"rdb",l:"RDB"},{v:"lci",l:"LCI"},{v:"lca",l:"LCA"},{v:"tesouro",l:"Tesouro Direto"},{v:"debenture",l:"Debênture"},{v:"poupanca",l:"Poupança"},{v:"fundo_rf",l:"Fundo de renda fixa"},{v:"outro",l:"Outro"}],inv.modalidade));
+    bd.appendChild(lbl("Valor inicial (R$) *"));bd.appendChild(inp("ei-val-pj","",inv.valorInicial,"number"));
+    var rSel2PJ=sel("ei-rent-pj",[{v:"prefixado",l:"Prefixado"},{v:"cdi_pct",l:"% do CDI"},{v:"ipca_mais",l:"IPCA + taxa"},{v:"personalizado",l:"Taxa personalizada"}],inv.rentTipo);
+    bd.appendChild(lbl("Tipo de rentabilidade"));bd.appendChild(rSel2PJ);
+    var rentFieldEditPJ=ce("div");rentFieldEditPJ.id="ei-rent-field-pj";bd.appendChild(rentFieldEditPJ);
+    function renderRentFieldEditPJ(){
+      rentFieldEditPJ.innerHTML="";
+      var rv=gi("ei-rent-pj")?gi("ei-rent-pj").value:"prefixado";
+      if(rv==="prefixado"){rentFieldEditPJ.appendChild(lbl("Taxa anual (%)"));rentFieldEditPJ.appendChild(inp("ei-taxa-pj","",inv.taxa,"number"));}
+      else if(rv==="cdi_pct"){rentFieldEditPJ.appendChild(lbl("Percentual do CDI (%)"));rentFieldEditPJ.appendChild(inp("ei-cdi-pj","",inv.cdiPct,"number"));}
+      else if(rv==="ipca_mais"){rentFieldEditPJ.appendChild(lbl("Taxa adicional ao IPCA (% a.a.)"));rentFieldEditPJ.appendChild(inp("ei-ipca-pj","",inv.ipcaTaxa,"number"));}
+      else{rentFieldEditPJ.appendChild(lbl("Descreva a taxa personalizada"));rentFieldEditPJ.appendChild(inp("ei-taxaperso-pj","",inv.taxaPersonalizada));}
+    }
+    rSel2PJ.onchange=renderRentFieldEditPJ;renderRentFieldEditPJ();
     bd.appendChild(lbl("Vencimento"));bd.appendChild(inp("ei-venc-pj","",inv.vencimento,"date"));
+    bd.appendChild(lbl("Liquidez"));bd.appendChild(sel("ei-liq-pj",[{v:"diaria",l:"Diária"},{v:"vencimento",l:"No vencimento"},{v:"outro",l:"Outro"}],inv.liquidez));
+    var irWEditPJ=ce("div");irWEditPJ.style.cssText="display:flex;align-items:center;gap:8px;margin:4px 0 10px";
+    var irCbEditPJ=ce("input");irCbEditPJ.type="checkbox";irCbEditPJ.id="ei-isento-pj";irCbEditPJ.checked=!!inv.isento;
+    var irLEditPJ=ce("label");irLEditPJ.htmlFor="ei-isento-pj";irLEditPJ.style.cssText="font-size:12px;color:#6b7280";irLEditPJ.textContent="Isento de Imposto de Renda";
+    irWEditPJ.appendChild(irCbEditPJ);irWEditPJ.appendChild(irLEditPJ);bd.appendChild(irWEditPJ);
   } else {
+    bd.appendChild(lbl("Tipo do ativo"));bd.appendChild(sel("ei-subtipo-pj",[{v:"acao",l:"Ação"},{v:"fii",l:"Fundo Imobiliário"},{v:"etf",l:"ETF"},{v:"fundo",l:"Fundo"},{v:"bdr",l:"BDR"},{v:"cripto",l:"Criptoativo"},{v:"outro",l:"Outro"}],inv.subtipo));
     bd.appendChild(lbl("Quantidade"));bd.appendChild(inp("ei-qtd-pj","",inv.qtd,"number"));
     bd.appendChild(lbl("Preço médio (R$)"));bd.appendChild(inp("ei-preco-pj","",inv.precoMedio,"number"));
+    bd.appendChild(lbl("Valor inicialmente investido (R$) *"));bd.appendChild(inp("ei-val-pj","",inv.valorInicial,"number"));
   }
+  var objsPJ=D.pjObjectives||[];
+  var objOptsPJ=objsPJ.length?[{v:"",l:"Nenhum"}].concat(objsPJ.map(function(o){return{v:o.id,l:o.icon+" "+o.name}})):[{v:"",l:"Nenhum objetivo financeiro disponível."}];
+  bd.appendChild(lbl("Objetivo financeiro (opcional)"));bd.appendChild(sel("ei-obj-pj",objOptsPJ,inv.objetivoId||""));
+  bd.appendChild(lbl("Observação (opcional)"));var obsEditPJ=ce("textarea","inp");obsEditPJ.id="ei-obs-pj";obsEditPJ.rows=2;obsEditPJ.value=inv.observacao||"";obsEditPJ.style.marginBottom="8px";bd.appendChild(obsEditPJ);
+  bd.appendChild(lbl("Status"));bd.appendChild(sel("ei-status-pj",[{v:"ativo",l:"Ativo"},{v:"encerrado",l:"Encerrado"}],inv.status||"ativo"));
+
   var brow=ce("div","brow");
   var cancel=ce("button","btn bou");cancel.textContent="Cancelar";cancel.onclick=function(){oM(false,"m2")};
   var save=ce("button","btn bpj");save.textContent="Salvar";
   save.onclick=function(){
-    D.pjInvestments[idx].nome=gi("ei-nome-pj").value.trim()||inv.nome;
-    D.pjInvestments[idx].inst=gi("ei-inst-pj").value.trim()||"";
+    var nome=gi("ei-nome-pj").value.trim();var inst=gi("ei-inst-pj").value.trim();var data=gi("ei-data-pj").value;
+    var val=parseFloat(gi("ei-val-pj").value);
+    if(!nome){alert("Informe o nome do investimento.");return}
+    if(!inst){alert("Informe a instituição.");return}
+    if(!data){alert("Informe uma data válida.");return}
+    if(!val||val<=0){alert("Informe um valor maior que zero.");return}
+    var rec=D.pjInvestments[idx];
+    var valorAnterior=rec.valorInicial;
+    rec.nome=nome;rec.inst=inst;rec.dataAplicacao=data;
+    var objId=gi("ei-obj-pj")?gi("ei-obj-pj").value:"";
+    var objObjPJ2=objsPJ.find(function(o){return String(o.id)===String(objId)});
+    rec.objetivoId=objId||"";rec.objetivo=objObjPJ2?objObjPJ2.name:"";
+    rec.observacao=gi("ei-obs-pj")?gi("ei-obs-pj").value.trim():"";
+    rec.status=gi("ei-status-pj")?gi("ei-status-pj").value:"ativo";
     if(inv.tipo==="fixo"){
-      D.pjInvestments[idx].valorInicial=parseFloat(gi("ei-val-pj").value)||inv.valorInicial;
-      D.pjInvestments[idx].taxa=parseFloat(gi("ei-taxa-pj").value)||inv.taxa;
-      D.pjInvestments[idx].vencimento=gi("ei-venc-pj").value||"";
+      rec.modalidade=gi("ei-modal-pj")?gi("ei-modal-pj").value:rec.modalidade;
+      rec.valorInicial=val;
+      rec.rentTipo=gi("ei-rent-pj")?gi("ei-rent-pj").value:rec.rentTipo;
+      if(rec.rentTipo==="prefixado")rec.taxa=parseFloat(gi("ei-taxa-pj")?gi("ei-taxa-pj").value:0)||0;
+      else if(rec.rentTipo==="cdi_pct")rec.cdiPct=parseFloat(gi("ei-cdi-pj")?gi("ei-cdi-pj").value:0)||0;
+      else if(rec.rentTipo==="ipca_mais")rec.ipcaTaxa=parseFloat(gi("ei-ipca-pj")?gi("ei-ipca-pj").value:0)||0;
+      else rec.taxaPersonalizada=gi("ei-taxaperso-pj")?gi("ei-taxaperso-pj").value.trim():"";
+      rec.vencimento=gi("ei-venc-pj")?gi("ei-venc-pj").value:"";
+      rec.liquidez=gi("ei-liq-pj")?gi("ei-liq-pj").value:rec.liquidez;
+      rec.isento=gi("ei-isento-pj")?gi("ei-isento-pj").checked:false;
     } else {
-      D.pjInvestments[idx].qtd=parseFloat(gi("ei-qtd-pj").value)||inv.qtd;
-      D.pjInvestments[idx].precoMedio=parseFloat(gi("ei-preco-pj").value)||inv.precoMedio;
-      D.pjInvestments[idx].valorInicial=(D.pjInvestments[idx].qtd)*(D.pjInvestments[idx].precoMedio);
+      rec.qtd=parseFloat(gi("ei-qtd-pj").value)||rec.qtd;
+      rec.precoMedio=parseFloat(gi("ei-preco-pj").value)||rec.precoMedio;
+      rec.valorInicial=val;
+    }
+    if(valorAnterior!==rec.valorInicial){
+      rec.historico=rec.historico||[];
+      rec.historico.push({tipo:"correcao_cadastral",valorAnterior:valorAnterior,valorNovo:rec.valorInicial,data:tod(),hora:new Date().toTimeString().slice(0,5),origem:"manual"});
     }
     sv();oM(false,"m2");nav("invest");
   };
@@ -6889,17 +8141,25 @@ function oAtualizarValorPJ(idx,inv){
   var bd=gi("m2b");bd.innerHTML="";
   var tt=ce("div","mt");tt.textContent="Atualizar valor · "+inv.nome;bd.appendChild(tt);
   var note=ce("div");note.style.cssText="font-size:11px;color:#6b7280;background:#f9fafb;border-radius:8px;padding:10px;margin-bottom:12px";
-  note.textContent="Informe o valor atual. Esta atualização é manual — não está em tempo real.";
+  note.innerHTML="<b>Atualização manual</b> — informe o valor atual do investimento. Não é uma cotação em tempo real.";
   bd.appendChild(note);
   var lbl=ce("label","lbl");lbl.textContent="Valor atual (R$)";bd.appendChild(lbl);
   var valInp=ce("input","inp");valInp.type="number";valInp.value=inv.valorAtual||inv.valorInicial||0;valInp.style.marginBottom="8px";bd.appendChild(valInp);
+  var lbl2=ce("label","lbl");lbl2.textContent="Data da atualização";bd.appendChild(lbl2);
+  var dtInp=ce("input","inp");dtInp.type="date";dtInp.value=tod();dtInp.style.marginBottom="8px";bd.appendChild(dtInp);
+  var lbl3=ce("label","lbl");lbl3.textContent="Observação (opcional)";bd.appendChild(lbl3);
+  var obsInp=ce("textarea","inp");obsInp.rows=2;obsInp.style.marginBottom="8px";bd.appendChild(obsInp);
   var brow=ce("div","brow");
   var cancel=ce("button","btn bou");cancel.textContent="Cancelar";cancel.onclick=function(){oM(false,"m2")};
   var save=ce("button","btn bpj");save.textContent="Salvar";
   save.onclick=function(){
     var v=parseFloat(valInp.value)||0;
-    D.pjInvestments[idx].valorAtual=v;
-    D.pjInvestments[idx].updatedAt=new Date().toISOString();
+    var rec=D.pjInvestments[idx];
+    var valorAnterior=rec.valorAtual!==undefined?rec.valorAtual:rec.valorInicial;
+    rec.valorAtual=v;
+    rec.updatedAt=new Date().toISOString();
+    rec.historico=rec.historico||[];
+    rec.historico.push({tipo:"atualizacao_valor",valorAnterior:valorAnterior,valorNovo:v,data:dtInp.value||tod(),hora:new Date().toTimeString().slice(0,5),origem:"manual",observacao:obsInp.value.trim()});
     sv();oM(false,"m2");nav("invest");
   };
   brow.appendChild(cancel);brow.appendChild(save);bd.appendChild(brow);oM(true,"m2");
@@ -6915,10 +8175,12 @@ function oAddObjPJ(){
   var nmI=ce("input","inp");nmI.id="oj-nm";nmI.placeholder="Nome do objetivo";row.appendChild(icoI);row.appendChild(nmI);bd.appendChild(row);
   bd.appendChild(lbl("Tipo"));var ts=ce("select","sel");ts.id="oj-tp";ts.style.marginBottom="8px";OBJ_TYPES.forEach(function(o){var op=ce("option");op.textContent=o;ts.appendChild(op)});bd.appendChild(ts);
   bd.appendChild(lbl("Valor necessário (R$)"));var ti=ce("input","inp");ti.id="oj-tgt";ti.type="number";ti.placeholder="Ex: 10000";ti.style.marginBottom="8px";bd.appendChild(ti);
+  bd.appendChild(lbl("Data limite"));var di=ce("input","inp");di.id="oj-dt";di.type="month";di.style.marginBottom="8px";bd.appendChild(di);
+  bd.appendChild(lbl("Aporte mensal planejado (R$, opcional)"));var ami=ce("input","inp");ami.id="oj-am";ami.type="number";ami.placeholder="Ex: 300";ami.style.marginBottom="8px";bd.appendChild(ami);
   var brow=ce("div","brow");
   var bc=ce("button","btn bou");bc.textContent="Cancelar";bc.onclick=function(){oM(false,"m2")};
   var bs=ce("button","btn bpj");bs.style.flex="2";bs.textContent="Criar";
-  bs.onclick=function(){var nm=gi("oj-nm").value.trim();var tgt=parseFloat(gi("oj-tgt").value);if(!nm||!tgt)return;(D.pjObjectives=D.pjObjectives||[]).push({id:Date.now(),name:nm,icon:gi("oj-ico").value||"🎯",type:gi("oj-tp").value,target:tgt,saved:0});sv();oM(false,"m2");nav("invest")};
+  bs.onclick=function(){var nm=gi("oj-nm").value.trim();var tgt=parseFloat(gi("oj-tgt").value);if(!nm||!tgt)return;(D.pjObjectives=D.pjObjectives||[]).push({id:Date.now(),name:nm,icon:gi("oj-ico").value||"🎯",type:gi("oj-tp").value,target:tgt,saved:0,deadline:gi("oj-dt").value,aporteMensalPlanejado:parseFloat(gi("oj-am").value)||0,status:"ativo"});sv();oM(false,"m2");nav("invest")};
   brow.appendChild(bc);brow.appendChild(bs);bd.appendChild(brow);oM(true,"m2")
 }
 
