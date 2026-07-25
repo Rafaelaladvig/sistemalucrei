@@ -2434,14 +2434,7 @@ function rInvest(c){
   var pctFixo=carteira.length?Math.round(fixo.length/carteira.length*100):0;
   var pctVar=carteira.length?Math.round(variavel.length/carteira.length*100):0;
 
-  // ── Bloco Investimentos — wrapper único (mesmo padrão de Objetivos financeiros) ──
-  var investCard=ce("div","card");investCard.style.padding="20px";
-  var invSh=ce("div","sh");invSh.style.marginBottom="14px";
-  invSh.innerHTML="<div style='font-size:13px;font-weight:700;color:var(--tx)'>Investimentos</div>";
-  var addBtn=ce("button","btn bpf");addBtn.textContent="+ Novo investimento";
-  addBtn.onclick=function(){oAddInvestimento()};invSh.appendChild(addBtn);investCard.appendChild(invSh);
-
-  // Filtros + Revisar carteira, mesma linha
+  // Barra externa: Filtros + Revisar carteira (fora do card, acima dele)
   var filtRow=ce("div");filtRow.style.cssText="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px";
   var _filt=window._invFilt||"todos";
   var filtBar=ce("div");filtBar.style.cssText="display:flex;gap:6px;flex-wrap:wrap";
@@ -2458,7 +2451,14 @@ function rInvest(c){
   checkWrap.appendChild(checkBtn);
   checkWrap.appendChild(dbTip("Toda vez que você revisar sua carteira, o Lucrei irá conferir automaticamente se os valores dos seus investimentos estão consistentes, verificando aportes, resgates, rendimentos, saldos e possíveis divergências entre os registros. Essa análise ajuda a manter sua carteira organizada e confiável."));
   filtRow.appendChild(filtBar);filtRow.appendChild(checkWrap);
-  investCard.appendChild(filtRow);
+  c.appendChild(filtRow);
+
+  // ── Card branco de Investimentos: só título + botão + conteúdo ──
+  var investCard=ce("div","card");investCard.style.padding="20px";
+  var invSh=ce("div","sh");invSh.style.marginBottom="14px";
+  invSh.innerHTML="<div style='font-size:13px;font-weight:700;color:var(--tx)'>Investimentos</div>";
+  var addBtn=ce("button","btn bpf");addBtn.textContent="+ Novo investimento";
+  addBtn.onclick=function(){oAddInvestimento()};invSh.appendChild(addBtn);investCard.appendChild(invSh);
 
   // Hero card carteira
   if(carteira.length){
@@ -7738,14 +7738,7 @@ function rInvestPJ(c){
   var pctFixo=carteira.length?Math.round(fixo.length/carteira.length*100):0;
   var pctVar=carteira.length?Math.round(variavel.length/carteira.length*100):0;
 
-  // ── Bloco Investimentos — wrapper único (mesmo padrão de Objetivos financeiros) ──
-  var investCard=ce("div","card");investCard.style.padding="20px";
-  var invSh=ce("div","sh");invSh.style.marginBottom="14px";
-  invSh.innerHTML="<div style='font-size:13px;font-weight:700;color:var(--tx)'>Investimentos</div>";
-  var addBtn=ce("button","btn bpj");addBtn.textContent="+ Novo investimento";
-  addBtn.onclick=function(){oAddInvestimentoPJ()};invSh.appendChild(addBtn);investCard.appendChild(invSh);
-
-  // Filtros + Revisar carteira, mesma linha
+  // Barra externa: Filtros + Revisar carteira (fora do card, acima dele)
   var filtRow=ce("div");filtRow.style.cssText="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px";
   var _filt=window._invFiltPJ||"todos";
   var filtBar=ce("div");filtBar.style.cssText="display:flex;gap:6px;flex-wrap:wrap";
@@ -7762,7 +7755,14 @@ function rInvestPJ(c){
   checkWrapPJ.appendChild(checkBtnPJ);
   checkWrapPJ.appendChild(dbTip("Toda vez que você revisar sua carteira, o Lucrei irá conferir automaticamente se os valores dos seus investimentos estão consistentes, verificando aportes, resgates, rendimentos, saldos e possíveis divergências entre os registros. Essa análise ajuda a manter sua carteira organizada e confiável."));
   filtRow.appendChild(filtBar);filtRow.appendChild(checkWrapPJ);
-  investCard.appendChild(filtRow);
+  c.appendChild(filtRow);
+
+  // ── Card branco de Investimentos: só título + botão + conteúdo ──
+  var investCard=ce("div","card");investCard.style.padding="20px";
+  var invSh=ce("div","sh");invSh.style.marginBottom="14px";
+  invSh.innerHTML="<div style='font-size:13px;font-weight:700;color:var(--tx)'>Investimentos</div>";
+  var addBtn=ce("button","btn bpj");addBtn.textContent="+ Novo investimento";
+  addBtn.onclick=function(){oAddInvestimentoPJ()};invSh.appendChild(addBtn);investCard.appendChild(invSh);
 
   // Hero card carteira
   if(carteira.length){
