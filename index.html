@@ -641,6 +641,22 @@ var DEF_PJ_OUT=[{name:"Aluguel",icon:"🏠"},{name:"Água",icon:"💧"},{name:"L
 
 // ═══ UTILS ═══════════════════════════════════════════════════════════════════
 function R(v){return new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"}).format(v||0)}
+
+// Tooltip reutilizável (mesmo padrão visual usado nos indicadores do Dashboard)
+function dbTip(text){
+  var span=ce("span");
+  span.style.cssText="display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:50%;background:#e5e7eb;color:#6b7280;font-size:9px;cursor:help;margin-left:4px;flex-shrink:0;font-style:normal;font-weight:700;position:relative";
+  span.textContent="?";
+  var tt=ce("div");
+  tt.style.cssText="display:none;position:absolute;bottom:calc(100% + 6px);left:50%;transform:translateX(-50%);background:#1f2937;color:#fff;font-size:11px;font-weight:400;padding:8px 10px;border-radius:8px;width:220px;line-height:1.5;z-index:999;white-space:normal;box-shadow:0 4px 16px rgba(0,0,0,.3)";
+  tt.textContent=text;
+  var arrow=ce("div");arrow.style.cssText="position:absolute;top:100%;left:50%;transform:translateX(-50%);border:5px solid transparent;border-top-color:#1f2937";
+  tt.appendChild(arrow);span.appendChild(tt);
+  span.onmouseenter=function(){tt.style.display="block"};
+  span.onmouseleave=function(){tt.style.display="none"};
+  span.onclick=function(e){e.stopPropagation();tt.style.display=tt.style.display==="none"?"block":"none"};
+  return span
+}
 function cl(v,a,b){return Math.min(Math.max(v,a),b)}
 function tod(){return new Date().toISOString().split("T")[0]}
 function now_(){return{y:new Date().getFullYear(),m:new Date().getMonth()}}
@@ -2386,7 +2402,7 @@ function rInvest(c){
   var _invTab=window._invTab||"carteira";
 
   // ── Tabs ─────────────────────────────────────────────────────
-  var tabBar=ce("div");tabBar.style.cssText="display:flex;gap:0;background:#eaf0e8;border-radius:12px;padding:3px;margin-bottom:14px";
+  var tabBar=ce("div");tabBar.style.cssText="display:flex;gap:0;background:#eaf0e8;border-radius:12px;padding:3px;margin-bottom:8px";
   ["carteira","simulador"].forEach(function(tab){
     var tb=ce("button");
     tb.style.cssText="flex:1;padding:8px;border:none;border-radius:9px;font-family:Poppins,sans-serif;font-size:12px;font-weight:600;cursor:pointer;transition:.2s;";
@@ -2400,10 +2416,12 @@ function rInvest(c){
 
   if(_invTab==="simulador"){rInvestSim(c);return;}
 
-  var checkWrap=ce("div");checkWrap.style.cssText="text-align:right;margin-bottom:8px";
-  var checkBtn=ce("button");checkBtn.style.cssText="background:none;border:none;color:#9ca3af;cursor:pointer;font-size:10px;font-family:inherit;text-decoration:underline;padding:0";
-  checkBtn.textContent="🔍 Verificar consistência";checkBtn.onclick=verificarConsistencia;
-  checkWrap.appendChild(checkBtn);c.appendChild(checkWrap);
+  var checkWrap=ce("div");checkWrap.style.cssText="display:flex;justify-content:flex-end;align-items:center;margin-bottom:4px";
+  var checkBtn=ce("button");checkBtn.style.cssText="background:none;border:none;color:#9ca3af;cursor:pointer;font-size:10px;font-family:inherit;text-decoration:underline;padding:0;display:flex;align-items:center";
+  checkBtn.textContent="Revisar carteira";checkBtn.onclick=verificarConsistencia;
+  checkWrap.appendChild(checkBtn);
+  checkWrap.appendChild(dbTip("Toda vez que você revisar sua carteira, o Lucrei irá conferir automaticamente se os valores dos seus investimentos estão consistentes, verificando aportes, resgates, rendimentos, saldos e possíveis divergências entre os registros. Essa análise ajuda a manter sua carteira organizada e confiável."));
+  c.appendChild(checkWrap);
 
   // ═══════════════════════════════════════════════════════════════
   // ÁREA 1 — MINHA CARTEIRA
@@ -2438,13 +2456,13 @@ function rInvest(c){
   }
 
   // Botão novo investimento
-  var addWrap=ce("div");addWrap.style.cssText="display:flex;justify-content:flex-end;margin-bottom:10px";
+  var addWrap=ce("div");addWrap.style.cssText="display:flex;justify-content:flex-end;margin-bottom:5px";
   var addBtn=ce("button","btn bpf");addBtn.textContent="+ Novo investimento";
   addBtn.onclick=function(){oAddInvestimento()};addWrap.appendChild(addBtn);c.appendChild(addWrap);
 
   // Filtros
   var _filt=window._invFilt||"todos";
-  var filtBar=ce("div");filtBar.style.cssText="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px";
+  var filtBar=ce("div");filtBar.style.cssText="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px";
   [{k:"todos",l:"Todos"},{k:"fixo",l:"Renda fixa"},{k:"variavel",l:"Renda variável"}].forEach(function(f){
     var fb=ce("button");
     fb.style.cssText="padding:5px 12px;border-radius:20px;border:1.5px solid "+(f.k===_filt?"#4A6741":"var(--bd)")+";background:"+(f.k===_filt?"#4A6741":"transparent")+";color:"+(f.k===_filt?"#fff":"var(--mu)")+";font-size:11px;font-weight:500;cursor:pointer;font-family:Poppins,sans-serif";
@@ -2548,8 +2566,7 @@ function rInvest(c){
   // Objetivos financeiros
   var objCard=ce("div","card");objCard.style.padding="20px";
   var osh=ce("div","sh");osh.style.marginBottom="14px";osh.innerHTML="<div style='font-size:13px;font-weight:700;color:var(--tx)'>Objetivos financeiros</div>";
-  var addOB=ce("button");addOB.style.cssText="font-size:11px;color:#4A6741;background:none;border:none;cursor:pointer;font-weight:600;font-family:inherit";
-  addOB.textContent="+ Novo";addOB.onclick=function(){oAddObj()};osh.appendChild(addOB);objCard.appendChild(osh);
+  var addOB=ce("button","btn bpf");addOB.textContent="+ Novo objetivo";addOB.onclick=function(){oAddObj()};osh.appendChild(addOB);objCard.appendChild(osh);
   if(objs.length){
     objs.forEach(function(obj,i){
       var investVinculados=carteira.filter(function(inv){return inv.objetivoId?String(inv.objetivoId)===String(obj.id):inv.objetivo===obj.name});
@@ -5641,21 +5658,8 @@ function rPJDash(c,mk){
   // ── HELPERS ───────────────────────────────────────────────────
   var sectionBorderCol=null;
 
-  // Tooltip helper
-  function tip(text){
-    var span=ce("span");
-    span.style.cssText="display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:50%;background:#e5e7eb;color:#6b7280;font-size:9px;cursor:help;margin-left:4px;flex-shrink:0;font-style:normal;font-weight:700;position:relative";
-    span.textContent="?";
-    var tt=ce("div");
-    tt.style.cssText="display:none;position:absolute;bottom:calc(100% + 6px);left:50%;transform:translateX(-50%);background:#1f2937;color:#fff;font-size:11px;font-weight:400;padding:8px 10px;border-radius:8px;width:220px;line-height:1.5;z-index:999;white-space:normal;box-shadow:0 4px 16px rgba(0,0,0,.3)";
-    tt.textContent=text;
-    var arrow=ce("div");arrow.style.cssText="position:absolute;top:100%;left:50%;transform:translateX(-50%);border:5px solid transparent;border-top-color:#1f2937";
-    tt.appendChild(arrow);span.appendChild(tt);
-    span.onmouseenter=function(){tt.style.display="block"};
-    span.onmouseleave=function(){tt.style.display="none"};
-    span.onclick=function(e){e.stopPropagation();tt.style.display=tt.style.display==="none"?"block":"none"};
-    return span
-  }
+  // Tooltip helper (global — ver dbTip)
+
 
   // Modal report
   function openReport(title,rows,extra){
@@ -5686,7 +5690,7 @@ function rPJDash(c,mk){
     var hdr=ce("div");hdr.style.cssText="display:flex;align-items:center;margin-bottom:5px";
     var lbl=ce("div");lbl.style.cssText="font-size:9px;color:#9ca3af;font-weight:600;letter-spacing:.8px;text-transform:uppercase";lbl.textContent=opts.l;
     hdr.appendChild(lbl);
-    if(opts.tip)hdr.appendChild(tip(opts.tip));
+    if(opts.tip)hdr.appendChild(dbTip(opts.tip));
     b.appendChild(hdr);
     var val=ce("div");val.style.cssText="font-size:20px;font-weight:300;color:"+(opts.col||"#3D2B1F");val.textContent=opts.v;b.appendChild(val);
     if(opts.s){var sub=ce("div");sub.style.cssText="font-size:10px;color:#9ca3af;margin-top:2px";sub.textContent=opts.s;b.appendChild(sub)}
@@ -7699,7 +7703,7 @@ function rInvestPJ(c){
   var _invTab=window._invTabPJ||"carteira";
 
   // ── Tabs ─────────────────────────────────────────────────────
-  var tabBar=ce("div");tabBar.style.cssText="display:flex;gap:0;background:#eaf0e8;border-radius:12px;padding:3px;margin-bottom:14px";
+  var tabBar=ce("div");tabBar.style.cssText="display:flex;gap:0;background:#eaf0e8;border-radius:12px;padding:3px;margin-bottom:8px";
   ["carteira","simulador"].forEach(function(tab){
     var tb=ce("button");
     tb.style.cssText="flex:1;padding:8px;border:none;border-radius:9px;font-family:Poppins,sans-serif;font-size:12px;font-weight:600;cursor:pointer;transition:.2s;";
@@ -7713,10 +7717,12 @@ function rInvestPJ(c){
 
   if(_invTab==="simulador"){rInvestSimPJ(c);return;}
 
-  var checkWrapPJ=ce("div");checkWrapPJ.style.cssText="text-align:right;margin-bottom:8px";
-  var checkBtnPJ=ce("button");checkBtnPJ.style.cssText="background:none;border:none;color:#9ca3af;cursor:pointer;font-size:10px;font-family:inherit;text-decoration:underline;padding:0";
-  checkBtnPJ.textContent="🔍 Verificar consistência";checkBtnPJ.onclick=verificarConsistencia;
-  checkWrapPJ.appendChild(checkBtnPJ);c.appendChild(checkWrapPJ);
+  var checkWrapPJ=ce("div");checkWrapPJ.style.cssText="display:flex;justify-content:flex-end;align-items:center;margin-bottom:4px";
+  var checkBtnPJ=ce("button");checkBtnPJ.style.cssText="background:none;border:none;color:#9ca3af;cursor:pointer;font-size:10px;font-family:inherit;text-decoration:underline;padding:0;display:flex;align-items:center";
+  checkBtnPJ.textContent="Revisar carteira";checkBtnPJ.onclick=verificarConsistencia;
+  checkWrapPJ.appendChild(checkBtnPJ);
+  checkWrapPJ.appendChild(dbTip("Toda vez que você revisar sua carteira, o Lucrei irá conferir automaticamente se os valores dos seus investimentos estão consistentes, verificando aportes, resgates, rendimentos, saldos e possíveis divergências entre os registros. Essa análise ajuda a manter sua carteira organizada e confiável."));
+  c.appendChild(checkWrapPJ);
 
   // ═══════════════════════════════════════════════════════════════
   // ÁREA 1 — MINHA CARTEIRA
@@ -7751,13 +7757,13 @@ function rInvestPJ(c){
   }
 
   // Botão novo investimento
-  var addWrap=ce("div");addWrap.style.cssText="display:flex;justify-content:flex-end;margin-bottom:10px";
+  var addWrap=ce("div");addWrap.style.cssText="display:flex;justify-content:flex-end;margin-bottom:5px";
   var addBtn=ce("button","btn bpj");addBtn.textContent="+ Novo investimento";
   addBtn.onclick=function(){oAddInvestimentoPJ()};addWrap.appendChild(addBtn);c.appendChild(addWrap);
 
   // Filtros
   var _filt=window._invFiltPJ||"todos";
-  var filtBar=ce("div");filtBar.style.cssText="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px";
+  var filtBar=ce("div");filtBar.style.cssText="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px";
   [{k:"todos",l:"Todos"},{k:"fixo",l:"Renda fixa"},{k:"variavel",l:"Renda variável"}].forEach(function(f){
     var fb=ce("button");
     fb.style.cssText="padding:5px 12px;border-radius:20px;border:1.5px solid "+(f.k===_filt?"#C4693A":"var(--bd)")+";background:"+(f.k===_filt?"#C4693A":"transparent")+";color:"+(f.k===_filt?"#fff":"var(--mu)")+";font-size:11px;font-weight:500;cursor:pointer;font-family:Poppins,sans-serif";
@@ -7861,8 +7867,7 @@ function rInvestPJ(c){
   // Objetivos financeiros
   var objCard=ce("div","card");objCard.style.padding="20px";
   var osh=ce("div","sh");osh.style.marginBottom="14px";osh.innerHTML="<div style='font-size:13px;font-weight:700;color:var(--tx)'>Objetivos financeiros</div>";
-  var addOB=ce("button");addOB.style.cssText="font-size:11px;color:#C4693A;background:none;border:none;cursor:pointer;font-weight:600;font-family:inherit";
-  addOB.textContent="+ Novo";addOB.onclick=function(){oAddObjPJ()};osh.appendChild(addOB);objCard.appendChild(osh);
+  var addOB=ce("button","btn bpj");addOB.textContent="+ Novo objetivo";addOB.onclick=function(){oAddObjPJ()};osh.appendChild(addOB);objCard.appendChild(osh);
   if(objs.length){
     objs.forEach(function(obj,i){
       var investVinculados=carteira.filter(function(inv){return inv.objetivoId?String(inv.objetivoId)===String(obj.id):inv.objetivo===obj.name});
