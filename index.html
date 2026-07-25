@@ -2416,12 +2416,7 @@ function rInvest(c){
 
   if(_invTab==="simulador"){rInvestSim(c);return;}
 
-  var checkWrap=ce("div");checkWrap.style.cssText="display:flex;justify-content:flex-end;align-items:center;margin-bottom:4px";
-  var checkBtn=ce("button");checkBtn.style.cssText="background:none;border:none;color:#9ca3af;cursor:pointer;font-size:10px;font-family:inherit;text-decoration:underline;padding:0;display:flex;align-items:center";
-  checkBtn.textContent="Revisar carteira";checkBtn.onclick=verificarConsistencia;
-  checkWrap.appendChild(checkBtn);
-  checkWrap.appendChild(dbTip("Toda vez que você revisar sua carteira, o Lucrei irá conferir automaticamente se os valores dos seus investimentos estão consistentes, verificando aportes, resgates, rendimentos, saldos e possíveis divergências entre os registros. Essa análise ajuda a manter sua carteira organizada e confiável."));
-  c.appendChild(checkWrap);
+  if(_invTab==="simulador"){rInvestSim(c);return;}
 
   // ═══════════════════════════════════════════════════════════════
   // ÁREA 1 — MINHA CARTEIRA
@@ -2441,9 +2436,35 @@ function rInvest(c){
   var pctFixo=carteira.length?Math.round(fixo.length/carteira.length*100):0;
   var pctVar=carteira.length?Math.round(variavel.length/carteira.length*100):0;
 
+  // ── Bloco Investimentos — wrapper único (mesmo padrão de Objetivos financeiros) ──
+  var investCard=ce("div","card");investCard.style.padding="20px";
+  var invSh=ce("div","sh");invSh.style.marginBottom="14px";
+  invSh.innerHTML="<div style='font-size:13px;font-weight:700;color:var(--tx)'>Investimentos</div>";
+  var addBtn=ce("button","btn bpf");addBtn.textContent="+ Novo investimento";
+  addBtn.onclick=function(){oAddInvestimento()};invSh.appendChild(addBtn);investCard.appendChild(invSh);
+
+  // Filtros + Revisar carteira, mesma linha
+  var filtRow=ce("div");filtRow.style.cssText="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px";
+  var _filt=window._invFilt||"todos";
+  var filtBar=ce("div");filtBar.style.cssText="display:flex;gap:6px;flex-wrap:wrap";
+  [{k:"todos",l:"Todos"},{k:"fixo",l:"Renda fixa"},{k:"variavel",l:"Renda variável"}].forEach(function(f){
+    var fb=ce("button");
+    fb.style.cssText="padding:5px 12px;border-radius:20px;border:1.5px solid "+(f.k===_filt?"#4A6741":"var(--bd)")+";background:"+(f.k===_filt?"#4A6741":"transparent")+";color:"+(f.k===_filt?"#fff":"var(--mu)")+";font-size:11px;font-weight:500;cursor:pointer;font-family:Poppins,sans-serif";
+    fb.textContent=f.l;
+    (function(k){fb.onclick=function(){window._invFilt=k;nav("invest")}})(f.k);
+    filtBar.appendChild(fb);
+  });
+  var checkWrap=ce("div");checkWrap.style.cssText="display:flex;align-items:center;flex-shrink:0";
+  var checkBtn=ce("button");checkBtn.style.cssText="background:none;border:none;color:#9ca3af;cursor:pointer;font-size:10px;font-family:inherit;text-decoration:underline;padding:0;display:flex;align-items:center";
+  checkBtn.textContent="Revisar carteira";checkBtn.onclick=verificarConsistencia;
+  checkWrap.appendChild(checkBtn);
+  checkWrap.appendChild(dbTip("Toda vez que você revisar sua carteira, o Lucrei irá conferir automaticamente se os valores dos seus investimentos estão consistentes, verificando aportes, resgates, rendimentos, saldos e possíveis divergências entre os registros. Essa análise ajuda a manter sua carteira organizada e confiável."));
+  filtRow.appendChild(filtBar);filtRow.appendChild(checkWrap);
+  investCard.appendChild(filtRow);
+
   // Hero card carteira
   if(carteira.length){
-    var hero=ce("div","hero");hero.style.background="linear-gradient(135deg,#059669,#0284c7)";
+    var hero=ce("div","hero");hero.style.background="linear-gradient(135deg,#059669,#0284c7)";hero.style.marginBottom="12px";
     hero.innerHTML="<div class='hl'>PATRIMÔNIO TOTAL</div>"
       +"<div class='hv'>"+R(totalAtual)+"</div>"
       +"<div style='font-size:11px;color:rgba(255,255,255,.6);margin-bottom:8px'>atualização manual · não é tempo real</div>"
@@ -2452,37 +2473,20 @@ function rInvest(c){
       +"<div class='hi'><div class='hil'>RENDIMENTO</div><div class='hiv' style='color:"+(rendimento>=0?"#86efac":"#fca5a5")+"'>"+(rendimento>=0?"+":"")+R(rendimento)+" ("+rendPct.toFixed(1)+"%)</div></div>"
       +"<div class='hi'><div class='hil'>RENDA FIXA</div><div class='hiv' style='color:#fde68a'>"+pctFixo+"%</div></div>"
       +"</div>";
-    c.appendChild(hero);
+    investCard.appendChild(hero);
   }
-
-  // Botão novo investimento
-  var addWrap=ce("div");addWrap.style.cssText="display:flex;justify-content:flex-end;margin-bottom:5px";
-  var addBtn=ce("button","btn bpf");addBtn.textContent="+ Novo investimento";
-  addBtn.onclick=function(){oAddInvestimento()};addWrap.appendChild(addBtn);c.appendChild(addWrap);
-
-  // Filtros
-  var _filt=window._invFilt||"todos";
-  var filtBar=ce("div");filtBar.style.cssText="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px";
-  [{k:"todos",l:"Todos"},{k:"fixo",l:"Renda fixa"},{k:"variavel",l:"Renda variável"}].forEach(function(f){
-    var fb=ce("button");
-    fb.style.cssText="padding:5px 12px;border-radius:20px;border:1.5px solid "+(f.k===_filt?"#4A6741":"var(--bd)")+";background:"+(f.k===_filt?"#4A6741":"transparent")+";color:"+(f.k===_filt?"#fff":"var(--mu)")+";font-size:11px;font-weight:500;cursor:pointer;font-family:Poppins,sans-serif";
-    fb.textContent=f.l;
-    (function(k){fb.onclick=function(){window._invFilt=k;nav("invest")}})(f.k);
-    filtBar.appendChild(fb);
-  });
-  c.appendChild(filtBar);
 
   // Lista de investimentos
   var filtered=carteira.filter(function(i){return _filt==="todos"||i.tipo===_filt});
 
   if(!carteira.length){
-    var emCard=ce("div","card");
+    var emCard=ce("div");
     emCard.innerHTML="<div style='text-align:center;padding:32px 16px'>"
       +"<div style='font-size:32px;margin-bottom:12px'>📈</div>"
       +"<div style='font-size:14px;font-weight:600;color:var(--tx);margin-bottom:8px'>Você ainda não cadastrou nenhum investimento.</div>"
       +"<div style='font-size:12px;color:#9ca3af'>Clique em + Investimento para começar.</div>"
       +"</div>";
-    c.appendChild(emCard);
+    investCard.appendChild(emCard);
   } else if(filtered.length){
     filtered.forEach(function(inv,fi){
       var realIdx=invs.indexOf(inv);
@@ -2559,9 +2563,10 @@ function rInvest(c){
       var delBtn=ce("button","db");delBtn.textContent="🗑";
       (function(ii){delBtn.onclick=function(){delInvestimento(ii,false)}})(realIdx);
       brow.appendChild(updBtn);brow.appendChild(editBtn);brow.appendChild(delBtn);card.appendChild(brow);
-      c.appendChild(card);
+      investCard.appendChild(card);
     });
   }
+  c.appendChild(investCard);
 
   // Objetivos financeiros
   var objCard=ce("div","card");objCard.style.padding="20px";
@@ -7717,12 +7722,7 @@ function rInvestPJ(c){
 
   if(_invTab==="simulador"){rInvestSimPJ(c);return;}
 
-  var checkWrapPJ=ce("div");checkWrapPJ.style.cssText="display:flex;justify-content:flex-end;align-items:center;margin-bottom:4px";
-  var checkBtnPJ=ce("button");checkBtnPJ.style.cssText="background:none;border:none;color:#9ca3af;cursor:pointer;font-size:10px;font-family:inherit;text-decoration:underline;padding:0;display:flex;align-items:center";
-  checkBtnPJ.textContent="Revisar carteira";checkBtnPJ.onclick=verificarConsistencia;
-  checkWrapPJ.appendChild(checkBtnPJ);
-  checkWrapPJ.appendChild(dbTip("Toda vez que você revisar sua carteira, o Lucrei irá conferir automaticamente se os valores dos seus investimentos estão consistentes, verificando aportes, resgates, rendimentos, saldos e possíveis divergências entre os registros. Essa análise ajuda a manter sua carteira organizada e confiável."));
-  c.appendChild(checkWrapPJ);
+  if(_invTab==="simulador"){rInvestSimPJ(c);return;}
 
   // ═══════════════════════════════════════════════════════════════
   // ÁREA 1 — MINHA CARTEIRA
@@ -7742,9 +7742,35 @@ function rInvestPJ(c){
   var pctFixo=carteira.length?Math.round(fixo.length/carteira.length*100):0;
   var pctVar=carteira.length?Math.round(variavel.length/carteira.length*100):0;
 
+  // ── Bloco Investimentos — wrapper único (mesmo padrão de Objetivos financeiros) ──
+  var investCard=ce("div","card");investCard.style.padding="20px";
+  var invSh=ce("div","sh");invSh.style.marginBottom="14px";
+  invSh.innerHTML="<div style='font-size:13px;font-weight:700;color:var(--tx)'>Investimentos</div>";
+  var addBtn=ce("button","btn bpj");addBtn.textContent="+ Novo investimento";
+  addBtn.onclick=function(){oAddInvestimentoPJ()};invSh.appendChild(addBtn);investCard.appendChild(invSh);
+
+  // Filtros + Revisar carteira, mesma linha
+  var filtRow=ce("div");filtRow.style.cssText="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px";
+  var _filt=window._invFiltPJ||"todos";
+  var filtBar=ce("div");filtBar.style.cssText="display:flex;gap:6px;flex-wrap:wrap";
+  [{k:"todos",l:"Todos"},{k:"fixo",l:"Renda fixa"},{k:"variavel",l:"Renda variável"}].forEach(function(f){
+    var fb=ce("button");
+    fb.style.cssText="padding:5px 12px;border-radius:20px;border:1.5px solid "+(f.k===_filt?"#C4693A":"var(--bd)")+";background:"+(f.k===_filt?"#C4693A":"transparent")+";color:"+(f.k===_filt?"#fff":"var(--mu)")+";font-size:11px;font-weight:500;cursor:pointer;font-family:Poppins,sans-serif";
+    fb.textContent=f.l;
+    (function(k){fb.onclick=function(){window._invFiltPJ=k;nav("invest")}})(f.k);
+    filtBar.appendChild(fb);
+  });
+  var checkWrapPJ=ce("div");checkWrapPJ.style.cssText="display:flex;align-items:center;flex-shrink:0";
+  var checkBtnPJ=ce("button");checkBtnPJ.style.cssText="background:none;border:none;color:#9ca3af;cursor:pointer;font-size:10px;font-family:inherit;text-decoration:underline;padding:0;display:flex;align-items:center";
+  checkBtnPJ.textContent="Revisar carteira";checkBtnPJ.onclick=verificarConsistencia;
+  checkWrapPJ.appendChild(checkBtnPJ);
+  checkWrapPJ.appendChild(dbTip("Toda vez que você revisar sua carteira, o Lucrei irá conferir automaticamente se os valores dos seus investimentos estão consistentes, verificando aportes, resgates, rendimentos, saldos e possíveis divergências entre os registros. Essa análise ajuda a manter sua carteira organizada e confiável."));
+  filtRow.appendChild(filtBar);filtRow.appendChild(checkWrapPJ);
+  investCard.appendChild(filtRow);
+
   // Hero card carteira
   if(carteira.length){
-    var hero=ce("div","hero");hero.style.background="linear-gradient(135deg,#059669,#0284c7)";
+    var hero=ce("div","hero");hero.style.background="linear-gradient(135deg,#059669,#0284c7)";hero.style.marginBottom="12px";
     hero.innerHTML="<div class='hl'>PATRIMÔNIO TOTAL</div>"
       +"<div class='hv'>"+R(totalAtual)+"</div>"
       +"<div style='font-size:11px;color:rgba(255,255,255,.6);margin-bottom:8px'>atualização manual · não é tempo real</div>"
@@ -7753,37 +7779,20 @@ function rInvestPJ(c){
       +"<div class='hi'><div class='hil'>RENDIMENTO</div><div class='hiv' style='color:"+(rendimento>=0?"#86efac":"#fca5a5")+"'>"+(rendimento>=0?"+":"")+R(rendimento)+" ("+rendPct.toFixed(1)+"%)</div></div>"
       +"<div class='hi'><div class='hil'>RENDA FIXA</div><div class='hiv' style='color:#fde68a'>"+pctFixo+"%</div></div>"
       +"</div>";
-    c.appendChild(hero);
+    investCard.appendChild(hero);
   }
-
-  // Botão novo investimento
-  var addWrap=ce("div");addWrap.style.cssText="display:flex;justify-content:flex-end;margin-bottom:5px";
-  var addBtn=ce("button","btn bpj");addBtn.textContent="+ Novo investimento";
-  addBtn.onclick=function(){oAddInvestimentoPJ()};addWrap.appendChild(addBtn);c.appendChild(addWrap);
-
-  // Filtros
-  var _filt=window._invFiltPJ||"todos";
-  var filtBar=ce("div");filtBar.style.cssText="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px";
-  [{k:"todos",l:"Todos"},{k:"fixo",l:"Renda fixa"},{k:"variavel",l:"Renda variável"}].forEach(function(f){
-    var fb=ce("button");
-    fb.style.cssText="padding:5px 12px;border-radius:20px;border:1.5px solid "+(f.k===_filt?"#C4693A":"var(--bd)")+";background:"+(f.k===_filt?"#C4693A":"transparent")+";color:"+(f.k===_filt?"#fff":"var(--mu)")+";font-size:11px;font-weight:500;cursor:pointer;font-family:Poppins,sans-serif";
-    fb.textContent=f.l;
-    (function(k){fb.onclick=function(){window._invFiltPJ=k;nav("invest")}})(f.k);
-    filtBar.appendChild(fb);
-  });
-  c.appendChild(filtBar);
 
   // Lista de investimentos
   var filtered=carteira.filter(function(i){return _filt==="todos"||i.tipo===_filt});
 
   if(!carteira.length){
-    var emCard=ce("div","card");
+    var emCard=ce("div");
     emCard.innerHTML="<div style='text-align:center;padding:32px 16px'>"
       +"<div style='font-size:32px;margin-bottom:12px'>📈</div>"
       +"<div style='font-size:14px;font-weight:600;color:var(--tx);margin-bottom:8px'>Você ainda não cadastrou nenhum investimento.</div>"
       +"<div style='font-size:12px;color:#9ca3af'>Clique em + Investimento para começar.</div>"
       +"</div>";
-    c.appendChild(emCard);
+    investCard.appendChild(emCard);
   } else if(filtered.length){
     filtered.forEach(function(inv,fi){
       var realIdx=invs.indexOf(inv);
@@ -7860,9 +7869,10 @@ function rInvestPJ(c){
       var delBtn=ce("button","db");delBtn.textContent="🗑";
       (function(ii){delBtn.onclick=function(){delInvestimento(ii,true)}})(realIdx);
       brow.appendChild(updBtn);brow.appendChild(editBtn);brow.appendChild(delBtn);card.appendChild(brow);
-      c.appendChild(card);
+      investCard.appendChild(card);
     });
   }
+  c.appendChild(investCard);
 
   // Objetivos financeiros
   var objCard=ce("div","card");objCard.style.padding="20px";
