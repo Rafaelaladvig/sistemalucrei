@@ -746,6 +746,67 @@ function delDivida(isPJ,debtId){
   }
 }
 
+// ── Indicadores financeiros PJ: classificação de custo direto ────────────────
+// Padrão sugerido: Insumos e Mão de obra = custo direto (CMV/CSV). O restante das
+// categorias de despesa PJ é tratado como despesa operacional. Guardado em D para
+// permitir revisão futura em Configurações, sem exigir isso agora.
+var CUSTO_DIRETO_DEFAULT=["Insumos","Mão de obra"];
+function custoDiretoCats(){return D.custoDiretoCatsPJ||CUSTO_DIRETO_DEFAULT}
+
+// ── Ativos Imobilizados (Patrimônio PJ) — depreciação linear ─────────────────
+function calcDepreciacaoMensal(asset){
+  if(!asset.valorAquisicao||!asset.vidaUtilMeses)return 0;
+  var idadeMeses=Math.floor((new Date()-new Date(asset.dataAquisicao+"T12:00:00"))/(1000*60*60*24*30.44));
+  if(idadeMeses>=asset.vidaUtilMeses)return 0; // totalmente depreciado
+  return asset.valorAquisicao/asset.vidaUtilMeses;
+}
+function depreciacaoAcumulada(asset){
+  if(!asset.valorAquisicao||!asset.vidaUtilMeses)return 0;
+  var idadeMeses=Math.floor((new Date()-new Date(asset.dataAquisicao+"T12:00:00"))/(1000*60*60*24*30.44));
+  var mensal=asset.valorAquisicao/asset.vidaUtilMeses;
+  return Math.min(asset.valorAquisicao,mensal*Math.max(0,idadeMeses));
+}
+function valorContabilAtual(asset){return Math.max(0,(asset.valorAquisicao||0)-depreciacaoAcumulada(asset))}
+function totalDepreciacaoMensalPJ(){return (D.pjAssets||[]).reduce(function(s,a){return s+calcDepreciacaoMensal(a)},0)}
+function totalAtivosImobilizados(){return (D.pjAssets||[]).reduce(function(s,a){return s+valorContabilAtual(a)},0)}
+
+function oAddAtivo(){
+  var bd=gi("m2b");bd.innerHTML="";
+  var tt=ce("div","mt");tt.textContent="Novo ativo imobilizado";bd.appendChild(tt);
+  function lbl(t){var l=ce("label","lbl");l.textContent=t;return l}
+  function inp(id,ph,type){var i=ce("input","inp");i.id=id;i.placeholder=ph||"";i.type=type||"text";i.style.marginBottom="8px";return i}
+  bd.appendChild(lbl("Nome do ativo *"));bd.appendChild(inp("at-nome","Ex: Cadeira de cabeleireiro, notebook"));
+  bd.appendChild(lbl("Valor de aquisição (R$) *"));bd.appendChild(inp("at-val","0,00","number"));
+  bd.appendChild(lbl("Data de aquisição *"));bd.appendChild(inp("at-data","","date"));
+  bd.appendChild(lbl("Vida útil (meses) *"));var vu=inp("at-vida","Ex: 60 (5 anos)","number");bd.appendChild(vu);
+  var note=ce("div");note.style.cssText="font-size:10.5px;color:#6b7280;background:#f9fafb;border-radius:8px;padding:8px 10px;margin-bottom:8px";
+  note.textContent="A depreciação é calculada de forma linear: valor de aquisição ÷ vida útil em meses.";
+  bd.appendChild(note);
+  bd.appendChild(lbl("Observação (opcional)"));var obs=ce("textarea","inp");obs.id="at-obs";obs.rows=2;obs.style.marginBottom="8px";bd.appendChild(obs);
+  var brow=ce("div","brow");
+  var cancel=ce("button","btn bou");cancel.textContent="Cancelar";cancel.onclick=function(){oM(false,"m2")};
+  var save=ce("button","btn bpj");save.textContent="Salvar";
+  save.onclick=function(){
+    var nome=gi("at-nome").value.trim();var val=parseFloat(gi("at-val").value)||0;
+    var data=gi("at-data").value;var vida=parseInt(gi("at-vida").value)||0;
+    if(!nome){alert("Informe o nome do ativo.");return}
+    if(!val||val<=0){alert("Informe um valor maior que zero.");return}
+    if(!data){alert("Informe a data de aquisição.");return}
+    if(!vida||vida<=0){alert("Informe a vida útil em meses.");return}
+    (D.pjAssets=D.pjAssets||[]).push({id:Date.now(),nome:nome,valorAquisicao:val,dataAquisicao:data,vidaUtilMeses:vida,observacao:gi("at-obs").value.trim(),createdAt:new Date().toISOString()});
+    sv();oM(false,"m2");nav("patrimonio");
+  };
+  brow.appendChild(cancel);brow.appendChild(save);bd.appendChild(brow);oM(true,"m2");
+}
+function delAtivo(id){
+  var arr=D.pjAssets||[];
+  var idx=arr.findIndex(function(a){return String(a.id)===String(id)});
+  if(idx<0)return;
+  if(confirm("Tem certeza de que deseja excluir este ativo?")){
+    arr.splice(idx,1);sv();nav("patrimonio");
+  }
+}
+
 var DEF_OUT=[{n:"Moradia",i:"🏠",c:"#6366f1"},{n:"Alimentação",i:"🛒",c:"#f59e0b"},{n:"Transporte",i:"🚗",c:"#3b82f6"},{n:"Saúde",i:"💊",c:"#10b981"},{n:"Educação",i:"📚",c:"#8b5cf6"},{n:"Lazer",i:"🎉",c:"#ec4899"},{n:"Vestuário",i:"👗",c:"#f97316"},{n:"Filhos",i:"👶",c:"#06b6d4"},{n:"Outros",i:"📦",c:"#94a3b8"}];
 var FIXED_OUT_CATS=[{n:"Investimento",i:"📈",c:"#059669",fixed:true}];// Fixed cats added separately
 var DEF_IN=[{n:"Salário",i:"💼",c:"#059669"},{n:"Freelance",i:"💻",c:"#4A6741"},{n:"PIX recebido",i:"📲",c:"#8b5cf6"},{n:"Rendimento",i:"📈",c:"#0284c7"},{n:"Outros",i:"📦",c:"#94a3b8"}];
@@ -953,7 +1014,7 @@ var DINIT={
   onboarded:false,tourDone:false,tour_pf_concluido:false,tour_pj_concluido:false,perfil:"autonoma",userName:"",userEmail:"",businessName:"",proLabore:0,
   pfInCats:[],pfOutCats:[],inCats:[],outCats:[],services:[],
   accounts:[],cards:[],cardPurchases:[],cardBills:[],
-  investments:[],pjInvestments:[],objectives:[],pjObjectives:[],invMovs:[],investPlans:[],pendingEntries:[],debts:[],pjDebts:[],debtMovs:[],
+  investments:[],pjInvestments:[],objectives:[],pjObjectives:[],invMovs:[],investPlans:[],pendingEntries:[],debts:[],pjDebts:[],debtMovs:[],pjAssets:[],
   pf:{transactions:[],plan:{}},
   pj:{transactions:[],plan:{},planCatsIn:[],planCatsOut:[]},
   clients:[],agenda:[],
@@ -1354,6 +1415,7 @@ var PJ_TABS=[
   {id:"plan",ic:"📋",l:"Planejamento"},
   {id:"invest",ic:"📈",l:"Investimentos"},
   {id:"dividas",ic:"💸",l:"Dívidas"},
+  {id:"patrimonio",ic:"🏢",l:"Patrimônio"},
   {id:"cartoes",ic:"💳",l:"Cartões"},
   {id:"hist",ic:"📋",l:"Histórico"},
   {id:"luna",ic:"✨",l:"Luna IA"},
@@ -1917,6 +1979,7 @@ function openPJMenu(){
     {id:"plan",    ic:"📝", l:"Planejamento"},
     {id:"invest",  ic:"📈", l:"Investimentos"},
     {id:"dividas", ic:"💸", l:"Dívidas"},
+    {id:"patrimonio", ic:"🏢", l:"Patrimônio"},
     {id:"cartoes", ic:"💳", l:"Cartões"},
     {id:"hist",    ic:"📋", l:"Histórico"},
     {id:"contas",  ic:"🏦", l:"Contas"},
@@ -2033,7 +2096,7 @@ function nav(t){
   if(isPF){
     ({dash:rDash,pfcalend:rPFCalend,invest:rInvest,dividas:rDividas,luna:rLunaTab,plan:rPlan,cartoes:rCartoes,hist:rHist,contas:rContas,config:rConfig,metas:rMetas})[t]?({dash:rDash,pfcalend:rPFCalend,invest:rInvest,dividas:rDividas,luna:rLunaTab,plan:rPlan,cartoes:rCartoes,hist:rHist,contas:rContas,config:rConfig,metas:rMetas})[t](c,mk_(vy,vm)):null
   }else{
-    var pjMap={dash:rPJD,pjdash:rPJDash,metas:rPJMetas,plan:rPJP,calend:rCalend,atend:rAtend,invest:rInvestPJ,dividas:rDividasPJ,cartoes:rCartoes,hist:rHistPJ,contas:rContas,luna:rLunaTab,config:rConfig};
+    var pjMap={dash:rPJD,pjdash:rPJDash,metas:rPJMetas,plan:rPJP,calend:rCalend,atend:rAtend,invest:rInvestPJ,dividas:rDividasPJ,patrimonio:rPatrimonioPJ,cartoes:rCartoes,hist:rHistPJ,contas:rContas,luna:rLunaTab,config:rConfig};
     if(pjMap[t])pjMap[t](c,mk_(vy,vm))
   }
 }
@@ -2578,6 +2641,83 @@ function rDividasRender(c,isPJ){
     });
   }
   c.appendChild(divCard);
+}
+
+// ── Tela: Patrimônio (PJ) — balanço simplificado + Ativos Imobilizados ───────
+function rPatrimonioPJ(c){
+  var cor="#C4693A";
+  // Ativo: contas PJ + investimentos PJ + ativos imobilizados
+  var contasPJ=totalPJ();
+  var investPJ=(D.pjInvestments||[]).filter(function(i){return i.isAsset}).reduce(function(s,i){return s+(i.valorAtual||i.valorInicial||0)},0);
+  var imobilizado=totalAtivosImobilizados();
+  var ativoTotal=contasPJ+investPJ+imobilizado;
+  // Passivo: dívidas PJ (valor devido)
+  var passivoTotal=(D.pjDebts||[]).filter(function(d){return d.status!=="quitada"}).reduce(function(s,d){return s+totalDevido(d)},0);
+  var patrimonioLiquido=ativoTotal-passivoTotal;
+
+  // Resumo do balanço
+  var balCard=ce("div","card");balCard.style.padding="20px";
+  var balSh=ce("div","sh");balSh.style.marginBottom="14px";
+  balSh.innerHTML="<div style='font-size:13px;font-weight:700;color:var(--tx)'>Balanço patrimonial</div>";
+  balCard.appendChild(balSh);
+  var grid=ce("div");grid.style.cssText="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px";
+  function bloco(label,valor,corTxt,detalhe){
+    var d=ce("div");d.style.cssText="background:#fafafe;border-radius:10px;padding:12px;border:1px solid #eaf0e8";
+    d.innerHTML="<div style='font-size:10px;color:#9ca3af;text-transform:uppercase;letter-spacing:.5px'>"+label+"</div>"
+      +"<div style='font-family:Cormorant Garamond,serif;font-size:18px;color:"+corTxt+";margin:2px 0'>"+R(valor)+"</div>"
+      +(detalhe?"<div style='font-size:10px;color:#9ca3af'>"+detalhe+"</div>":"");
+    return d;
+  }
+  grid.appendChild(bloco("Ativo",ativoTotal,"#059669","Contas + investimentos + imobilizado"));
+  grid.appendChild(bloco("Passivo",passivoTotal,"#dc2626","Dívidas em aberto"));
+  balCard.appendChild(grid);
+  var plBox=ce("div");plBox.style.cssText="background:linear-gradient(135deg,#C4693A,#9e4f27);border-radius:10px;padding:14px;text-align:center";
+  plBox.innerHTML="<div style='font-size:10px;color:rgba(255,255,255,.7);text-transform:uppercase;letter-spacing:.5px'>Patrimônio Líquido</div>"
+    +"<div style='font-family:Cormorant Garamond,serif;font-size:24px;color:#fff'>"+R(patrimonioLiquido)+"</div>";
+  balCard.appendChild(plBox);
+  var noteBal=ce("div");noteBal.style.cssText="font-size:10.5px;color:#9ca3af;margin-top:10px";
+  noteBal.textContent="Ativo − Passivo = Patrimônio Líquido. Valores de investimentos usam a última atualização manual, não cotação em tempo real.";
+  balCard.appendChild(noteBal);
+  c.appendChild(balCard);
+
+  // Ativos Imobilizados
+  var atCard=ce("div","card");atCard.style.padding="20px";
+  var atSh=ce("div","sh");atSh.style.marginBottom="14px";
+  atSh.innerHTML="<div style='font-size:13px;font-weight:700;color:var(--tx)'>Ativos imobilizados</div>";
+  var addBtn=ce("button","btn bpj");addBtn.textContent="+ Novo ativo";addBtn.onclick=function(){oAddAtivo()};
+  atSh.appendChild(addBtn);atCard.appendChild(atSh);
+
+  var assets=D.pjAssets||[];
+  if(!assets.length){
+    var em=ce("div");em.style.cssText="text-align:center;padding:32px 16px";
+    em.innerHTML="<div style='font-size:32px;margin-bottom:12px'>🏢</div>"
+      +"<div style='font-size:14px;font-weight:600;color:var(--tx);margin-bottom:8px'>Você ainda não cadastrou nenhum ativo imobilizado.</div>"
+      +"<div style='font-size:12px;color:#9ca3af'>Clique em + Novo ativo para começar.</div>";
+    atCard.appendChild(em);
+  } else {
+    assets.forEach(function(a){
+      var depMensal=calcDepreciacaoMensal(a);
+      var depAcum=depreciacaoAcumulada(a);
+      var valorAtual=valorContabilAtual(a);
+      var totalDepreciado=depAcum>=a.valorAquisicao;
+      var box=ce("div");box.style.cssText="background:#fafafe;border-radius:10px;padding:11px;border:1px solid #eaf0e8;margin-bottom:8px";
+      var hdr=ce("div");hdr.style.cssText="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px";
+      hdr.innerHTML="<div><div style='font-size:12px;font-weight:600'>"+a.nome+(totalDepreciado?" <span style='font-size:9px;color:#9ca3af'>(totalmente depreciado)</span>":"")+"</div>"
+        +"<div style='font-size:10px;color:#9ca3af'>Adquirido em "+a.dataAquisicao+" · "+a.vidaUtilMeses+" meses de vida útil</div></div>"
+        +"<div style='text-align:right'><div style='font-size:14px;font-weight:700;color:var(--tx)'>"+R(valorAtual)+"</div>"
+        +"<div style='font-size:10px;color:#9ca3af'>valor contábil atual</div></div>";
+      box.appendChild(hdr);
+      var det=ce("div");det.style.cssText="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:11px;color:#6b7280;margin-bottom:8px";
+      det.innerHTML="<div><div style='color:#9ca3af;font-size:10px'>Valor de aquisição</div><div style='font-weight:600;color:var(--tx)'>"+R(a.valorAquisicao)+"</div></div>"
+        +"<div><div style='color:#9ca3af;font-size:10px'>Depreciação/mês</div><div style='font-weight:600;color:var(--tx)'>"+R(depMensal)+"</div></div>";
+      box.appendChild(det);
+      var delB=ce("button","btn bou");delB.style.cssText="font-size:11px;padding:5px 10px";delB.textContent="🗑 Excluir";
+      (function(id){delB.onclick=function(){delAtivo(id)}})(a.id);
+      box.appendChild(delB);
+      atCard.appendChild(box);
+    });
+  }
+  c.appendChild(atCard);
 }
 
 function rInvest(c){
@@ -6143,6 +6283,13 @@ function rPJDash(c,mk){
 
   // ── BLOCO 2: FINANCEIRO ───────────────────────────────────────
   blockWrap("FINANCEIRO","📊","#4A6741","#faf5ff","#c5d9c2",function(w){
+    var custosDiretos=desp.filter(function(t){return custoDiretoCats().indexOf(t.cat||t.category)>=0}).reduce(function(s,t){return s+t.amount},0);
+    var impostosPJ=desp.filter(function(t){return(t.cat||t.category)==="Impostos"}).reduce(function(s,t){return s+t.amount},0);
+    var lucroBruto=fat-custosDiretos;
+    var margemBruta=fat>0?lucroBruto/fat*100:0;
+    var depreciacaoMes=totalDepreciacaoMensalPJ();
+    var ebitda=lucroLiq+impostosPJ;
+    var margemEbitda=fat>0?ebitda/fat*100:0;
     var finRow1=[
       kpiCard({l:"Lucro Líquido",v:R(lucroLiq),s:fat>0?margem.toFixed(1)+"% do faturamento":"",col:lucroLiq>=0?"#059669":"#dc2626",
         tip:"Quanto sobrou para a empresa após pagar TODAS as despesas. É o indicador mais importante.",
@@ -6156,8 +6303,20 @@ function rPJDash(c,mk){
       kpiCard({l:"Despesa % Faturamento",v:fat?despPct.toFixed(1)+"%":"—",s:despPct<50?"Controlado":despPct<70?"Regular":"Pesado",col:despPct<50?"#059669":despPct<70?"#f59e0b":"#dc2626",tip:"% do faturamento consumido por despesas. Abaixo de 50% = saudável.",onclick:function(){openReport("📊 Despesas x Fat.",[["Faturamento",R(fat),"#059669"],["Despesas fixas",R(fixas)+" ("+( fat?((fixas/fat)*100).toFixed(1):0 )+"%)","#dc2626"],["Despesas variáveis",R(variaveis)+" ("+(fat?((variaveis/fat)*100).toFixed(1):0)+"%)","#f59e0b"],["Total",R(tD)+" ("+despPct.toFixed(1)+"%)","#dc2626"],["Sobra",R(lucroLiq)+" ("+margem.toFixed(1)+"%)","#059669"]])}}),
       kpiCard({l:"Ponto de Equilíbrio",v:breakEven?(breakEven+" atend."):"—",s:breakEven?(cli>=breakEven?"✓ Coberto":"faltam "+(breakEven-cli)):"",col:cli>=breakEven&&breakEven?"#059669":"#f59e0b",tip:"Quantos atendimentos cobrem todas as despesas. Acima disso = lucro puro."})
     ];
+    var finRow3=[
+      kpiCard({l:"Lucro Bruto",v:R(lucroBruto),s:fat>0?margemBruta.toFixed(1)+"% do faturamento":"",col:lucroBruto>=0?"#059669":"#dc2626",
+        tip:"Faturamento menos os custos diretos do serviço (insumos e mão de obra). Mostra quanto sobra antes das despesas operacionais como aluguel e marketing.",
+        onclick:function(){openReport("📈 Composição do Lucro Bruto",[["Faturamento bruto",R(fat),"#059669"],["(-) Custos diretos (insumos, mão de obra)","-"+R(custosDiretos),"#dc2626"],["= Lucro bruto",R(lucroBruto),lucroBruto>=0?"#059669":"#dc2626"],["Margem bruta",margemBruta.toFixed(1)+"%","#4A6741"]])}}),
+      kpiCard({l:"EBITDA",v:R(ebitda),s:fat>0?margemEbitda.toFixed(1)+"% do faturamento":"",col:ebitda>=0?"#059669":"#dc2626",
+        tip:"Lucro antes de juros, impostos, depreciação e amortização. Mostra a geração de caixa da operação, sem o efeito de financiamentos ou de itens contábeis não-caixa.",
+        onclick:function(){openReport("💹 Composição do EBITDA",[["Lucro líquido",R(lucroLiq),lucroLiq>=0?"#059669":"#dc2626"],["(+) Impostos","+"+R(impostosPJ),"#4A6741"],["= EBITDA",R(ebitda),ebitda>=0?"#059669":"#dc2626"],["Margem EBITDA",margemEbitda.toFixed(1)+"%","#4A6741"],["Depreciação do mês (informativo)",R(depreciacaoMes),"#9ca3af"]])}}),
+      kpiCard({l:"Depreciação do mês",v:R(depreciacaoMes),s:(D.pjAssets||[]).length+" ativo(s) cadastrado(s)",col:"#6b7280",
+        tip:"Perda de valor mensal estimada dos seus ativos imobilizados (equipamentos, móveis), calculada de forma linear. É um custo contábil, não uma saída de caixa.",
+        onclick:function(){panel="pj";nav("patrimonio")}})
+    ];
     w.appendChild(kpiGrid(finRow1));
     w.appendChild(kpiGrid3(finRow2));
+    w.appendChild(kpiGrid3(finRow3));
 
   });
 
