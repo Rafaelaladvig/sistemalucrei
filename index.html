@@ -633,6 +633,119 @@ function delInvestimento(idx,isPJ){
     arr.splice(idx,1);sv();nav("invest");
   }
 }
+
+// ── Dívidas / Empréstimos — calculadoras de amortização ───────────────────────
+// Converte taxa informada (a.m. ou a.a.) para taxa mensal efetiva
+function taxaMensalDivida(taxaJuros,taxaUnidade){
+  taxaJuros=parseFloat(taxaJuros)||0;
+  if(taxaUnidade==="aa")return Math.pow(1+taxaJuros/100,1/12)-1;
+  return taxaJuros/100;
+}
+function addMeses(dataStr,n){
+  var d=new Date(dataStr+"T12:00:00");
+  d.setMonth(d.getMonth()+n);
+  return d.toISOString().split("T")[0];
+}
+// Price: parcela fixa
+function calcParcelasPrice(valorTotal,taxaM,prazo,dataInicio){
+  var parcelas=[];
+  var pmt=taxaM>0?(valorTotal*(taxaM/(1-Math.pow(1+taxaM,-prazo)))):(valorTotal/prazo);
+  var saldo=valorTotal;
+  for(var i=1;i<=prazo;i++){
+    var juros=saldo*taxaM;
+    var amort=pmt-juros;
+    saldo=Math.max(0,saldo-amort);
+    parcelas.push({numero:i,valorParcela:pmt,juros:juros,amortizacao:amort,saldoDevedor:saldo,dataVencimento:addMeses(dataInicio,i-1),status:"pendente"});
+  }
+  return parcelas;
+}
+// SAC: amortização constante, parcela decrescente
+function calcParcelasSAC(valorTotal,taxaM,prazo,dataInicio){
+  var parcelas=[];
+  var amort=valorTotal/prazo;
+  var saldo=valorTotal;
+  for(var i=1;i<=prazo;i++){
+    var juros=saldo*taxaM;
+    var pmt=amort+juros;
+    saldo=Math.max(0,saldo-amort);
+    parcelas.push({numero:i,valorParcela:pmt,juros:juros,amortizacao:amort,saldoDevedor:saldo,dataVencimento:addMeses(dataInicio,i-1),status:"pendente"});
+  }
+  return parcelas;
+}
+// Simples: valor total dividido igualmente, sem juros compostos
+function calcParcelasSimples(valorTotal,prazo,dataInicio){
+  var parcelas=[];
+  var pmt=valorTotal/prazo;
+  var saldo=valorTotal;
+  for(var i=1;i<=prazo;i++){
+    saldo=Math.max(0,saldo-pmt);
+    parcelas.push({numero:i,valorParcela:pmt,juros:0,amortizacao:pmt,saldoDevedor:saldo,dataVencimento:addMeses(dataInicio,i-1),status:"pendente"});
+  }
+  return parcelas;
+}
+function gerarParcelasDivida(sistema,valorTotal,taxaJuros,taxaUnidade,prazo,dataInicio){
+  var taxaM=taxaMensalDivida(taxaJuros,taxaUnidade);
+  if(sistema==="price")return calcParcelasPrice(valorTotal,taxaM,prazo,dataInicio);
+  if(sistema==="sac")return calcParcelasSAC(valorTotal,taxaM,prazo,dataInicio);
+  return calcParcelasSimples(valorTotal,prazo,dataInicio);
+}
+
+// ── Dívidas — CRUD e pagamento (centralizado, como em investimentos) ──────────
+function dividaArr(isPJ){return isPJ?(D.pjDebts||[]):(D.debts||[])}
+function totalDevido(debt){
+  return (debt.parcelas||[]).filter(function(p){return p.status!=="paga"}).reduce(function(s,p){return s+p.valorParcela},0);
+}
+function parcelasPagasInfo(debt){
+  var total=(debt.parcelas||[]).length;
+  var pagas=(debt.parcelas||[]).filter(function(p){return p.status==="paga"}).length;
+  return {pagas:pagas,total:total};
+}
+function proximaParcela(debt){
+  return (debt.parcelas||[]).find(function(p){return p.status!=="paga"})||null;
+}
+function marcarParcelaPaga(isPJ,debtId,numero,contaId){
+  var debt=dividaArr(isPJ).find(function(d){return String(d.id)===String(debtId)});
+  if(!debt)return;
+  var p=(debt.parcelas||[]).find(function(x){return x.numero===numero});
+  if(!p||p.status==="paga")return;
+  p.status="paga";p.dataPagamento=tod();
+  if(contaId){
+    var mov={id:Date.now(),ambiente:isPJ?"pj":"pf",debtId:debt.id,parcelaNumero:numero,valor:p.valorParcela,contaId:contaId,data:tod(),createdAt:new Date().toISOString()};
+    D.debtMovs=D.debtMovs||[];D.debtMovs.push(mov);
+    p.contaPagId=contaId;
+  }
+  var info=parcelasPagasInfo(debt);
+  if(info.pagas===info.total)debt.status="quitada";
+  sv();
+}
+function desmarcarParcelaPaga(isPJ,debtId,numero){
+  var debt=dividaArr(isPJ).find(function(d){return String(d.id)===String(debtId)});
+  if(!debt)return;
+  var p=(debt.parcelas||[]).find(function(x){return x.numero===numero});
+  if(!p||p.status!=="paga")return;
+  p.status="pendente";p.dataPagamento="";
+  D.debtMovs=(D.debtMovs||[]).filter(function(m){return !(String(m.debtId)===String(debtId)&&m.parcelaNumero===numero)});
+  p.contaPagId="";
+  if(debt.status==="quitada")debt.status="ativa";
+  sv();
+}
+function delDivida(isPJ,debtId){
+  var arr=dividaArr(isPJ);
+  var idx=arr.findIndex(function(d){return String(d.id)===String(debtId)});
+  if(idx<0)return;
+  var debt=arr[idx];
+  var temPagas=(debt.parcelas||[]).some(function(p){return p.status==="paga"});
+  if(temPagas){
+    if(confirm("Esta dívida já possui parcelas pagas registradas. Para preservar o histórico, ela será marcada como Encerrada em vez de excluída.\n\nDeseja encerrar esta dívida?")){
+      debt.status="encerrada";sv();nav("dividas");
+    }
+    return;
+  }
+  if(confirm("Tem certeza de que deseja excluir esta dívida?")){
+    arr.splice(idx,1);sv();nav("dividas");
+  }
+}
+
 var DEF_OUT=[{n:"Moradia",i:"🏠",c:"#6366f1"},{n:"Alimentação",i:"🛒",c:"#f59e0b"},{n:"Transporte",i:"🚗",c:"#3b82f6"},{n:"Saúde",i:"💊",c:"#10b981"},{n:"Educação",i:"📚",c:"#8b5cf6"},{n:"Lazer",i:"🎉",c:"#ec4899"},{n:"Vestuário",i:"👗",c:"#f97316"},{n:"Filhos",i:"👶",c:"#06b6d4"},{n:"Outros",i:"📦",c:"#94a3b8"}];
 var FIXED_OUT_CATS=[{n:"Investimento",i:"📈",c:"#059669",fixed:true}];// Fixed cats added separately
 var DEF_IN=[{n:"Salário",i:"💼",c:"#059669"},{n:"Freelance",i:"💻",c:"#4A6741"},{n:"PIX recebido",i:"📲",c:"#8b5cf6"},{n:"Rendimento",i:"📈",c:"#0284c7"},{n:"Outros",i:"📦",c:"#94a3b8"}];
@@ -840,7 +953,7 @@ var DINIT={
   onboarded:false,tourDone:false,tour_pf_concluido:false,tour_pj_concluido:false,perfil:"autonoma",userName:"",userEmail:"",businessName:"",proLabore:0,
   pfInCats:[],pfOutCats:[],inCats:[],outCats:[],services:[],
   accounts:[],cards:[],cardPurchases:[],cardBills:[],
-  investments:[],pjInvestments:[],objectives:[],pjObjectives:[],invMovs:[],investPlans:[],pendingEntries:[],
+  investments:[],pjInvestments:[],objectives:[],pjObjectives:[],invMovs:[],investPlans:[],pendingEntries:[],debts:[],pjDebts:[],debtMovs:[],
   pf:{transactions:[],plan:{}},
   pj:{transactions:[],plan:{},planCatsIn:[],planCatsOut:[]},
   clients:[],agenda:[],
@@ -1003,6 +1116,10 @@ function accBal(accId){
     if(m.tipo==="APORTE_INVESTIMENTO"&&String(m.contaOrigemId)===aid)b-=m.valor;
     else if(m.tipo==="RESGATE_INVESTIMENTO"&&String(m.contaDestinoId)===aid)b+=m.valorLiquido;
   });
+  // Parcelas de dívidas pagas com débito em conta
+  ;(D.debtMovs||[]).forEach(function(m){
+    if(String(m.contaId)===aid)b-=m.valor;
+  });
 
   // Card bill payments
   ;(D.cardBills||[]).filter(function(b2){return String(b2.fromAccId)===aid})
@@ -1024,7 +1141,8 @@ function totalPF(){
     return s;
   },0);
   var cardSum=(D.cardBills||[]).filter(function(b){return b.paid&&b.fromAccId}).reduce(function(s,b){return s-b.paidAmount},0);
-  return accSum+txSum+invSum+invMovSum+cardSum;
+  var debtSum=(D.debtMovs||[]).reduce(function(s,m){return m.ambiente==="pf"?s-m.valor:s},0);
+  return accSum+txSum+invSum+invMovSum+cardSum+debtSum;
 }
 // Returns {saldo: sum of positive account balances, overdraftUsed: sum of negative balances}
 // Negative accounts (using overdraft/cheque especial) are shown SEPARATELY
@@ -1221,6 +1339,7 @@ var PF_TABS=[
   {id:"dash",ic:"🏠",l:"Início"},
   {id:"pfcalend",ic:"📅",l:"Calendário"},
   {id:"invest",ic:"📈",l:"Investimentos"},
+  {id:"dividas",ic:"💸",l:"Dívidas"},
   {id:"luna",ic:"✨",l:"Luna IA"},
   {id:"plan",ic:"📋",l:"Planejamento"},
   {id:"cartoes",ic:"💳",l:"Cartões"},
@@ -1234,6 +1353,7 @@ var PJ_TABS=[
   {id:"metas",ic:"🎯",l:"Metas"},
   {id:"plan",ic:"📋",l:"Planejamento"},
   {id:"invest",ic:"📈",l:"Investimentos"},
+  {id:"dividas",ic:"💸",l:"Dívidas"},
   {id:"cartoes",ic:"💳",l:"Cartões"},
   {id:"hist",ic:"📋",l:"Histórico"},
   {id:"luna",ic:"✨",l:"Luna IA"},
@@ -1705,6 +1825,7 @@ function openPFMenu(){
   var items=[
     {id:"dash",    ic:"🏠", l:"Início"},
     {id:"invest",  ic:"📈", l:"Investimentos"},
+    {id:"dividas", ic:"💸", l:"Dívidas"},
     {id:"luna",    ic:"✨", l:"Luna IA"},
     {id:"metas",   ic:"🎯", l:"Metas"},
     {id:"plan",    ic:"📝", l:"Planejamento"},
@@ -1745,6 +1866,7 @@ function openPFMenu(){
   var items=[
     {id:"dash",    ic:"🏠", l:"Início"},
     {id:"invest",  ic:"📈", l:"Investimentos"},
+    {id:"dividas", ic:"💸", l:"Dívidas"},
     {id:"luna",    ic:"✨", l:"Luna IA"},
     {id:"metas",   ic:"🎯", l:"Metas"},
     {id:"plan",    ic:"📝", l:"Planejamento"},
@@ -1794,6 +1916,7 @@ function openPJMenu(){
     {id:"metas",   ic:"🎯", l:"Metas"},
     {id:"plan",    ic:"📝", l:"Planejamento"},
     {id:"invest",  ic:"📈", l:"Investimentos"},
+    {id:"dividas", ic:"💸", l:"Dívidas"},
     {id:"cartoes", ic:"💳", l:"Cartões"},
     {id:"hist",    ic:"📋", l:"Histórico"},
     {id:"contas",  ic:"🏦", l:"Contas"},
@@ -1901,16 +2024,16 @@ function nav(t){
   gi("tb-a").style.background=t==="invest"?"#059669":isPF?"#4A6741":"#C4693A";
   gi("tb-a").textContent=t==="invest"?"+ Investimento":t==="cartoes"?"+ Compra":"+ Lançar";
   // PJ: +Lançar only on dash (Início); PF: hide only on luna/config/etc
-  var hideLancar=isPF?["luna","config","clientes","agenda","pricing","invest"].includes(t):t!=="dash";
+  var hideLancar=isPF?["luna","config","clientes","agenda","pricing","invest","dividas"].includes(t):t!=="dash";
   gi("tb-a").style.display=hideLancar?"none":"flex";
   gi("tb-a").onclick=function(){if(tab==="invest")oInv();else if(tab==="cartoes")oCartaoCompra();else oLanc()};
   // Render
   renderSB();
   var c=gi("ct");c.innerHTML="";c.className="ct su";
   if(isPF){
-    ({dash:rDash,pfcalend:rPFCalend,invest:rInvest,luna:rLunaTab,plan:rPlan,cartoes:rCartoes,hist:rHist,contas:rContas,config:rConfig,metas:rMetas})[t]?({dash:rDash,pfcalend:rPFCalend,invest:rInvest,luna:rLunaTab,plan:rPlan,cartoes:rCartoes,hist:rHist,contas:rContas,config:rConfig,metas:rMetas})[t](c,mk_(vy,vm)):null
+    ({dash:rDash,pfcalend:rPFCalend,invest:rInvest,dividas:rDividas,luna:rLunaTab,plan:rPlan,cartoes:rCartoes,hist:rHist,contas:rContas,config:rConfig,metas:rMetas})[t]?({dash:rDash,pfcalend:rPFCalend,invest:rInvest,dividas:rDividas,luna:rLunaTab,plan:rPlan,cartoes:rCartoes,hist:rHist,contas:rContas,config:rConfig,metas:rMetas})[t](c,mk_(vy,vm)):null
   }else{
-    var pjMap={dash:rPJD,pjdash:rPJDash,metas:rPJMetas,plan:rPJP,calend:rCalend,atend:rAtend,invest:rInvestPJ,cartoes:rCartoes,hist:rHistPJ,contas:rContas,luna:rLunaTab,config:rConfig};
+    var pjMap={dash:rPJD,pjdash:rPJDash,metas:rPJMetas,plan:rPJP,calend:rCalend,atend:rAtend,invest:rInvestPJ,dividas:rDividasPJ,cartoes:rCartoes,hist:rHistPJ,contas:rContas,luna:rLunaTab,config:rConfig};
     if(pjMap[t])pjMap[t](c,mk_(vy,vm))
   }
 }
@@ -2396,6 +2519,67 @@ function svInv(pfAccs,invAccs,objs){
 }
 
 // ═══ INVEST TAB ══════════════════════════════════════════════════════════════
+// ── Tela: Dívidas (PF/PJ compartilham a mesma lógica de renderização) ────────
+function rDividas(c){rDividasRender(c,false)}
+function rDividasPJ(c){rDividasRender(c,true)}
+function rDividasRender(c,isPJ){
+  var cor=isPJ?"#C4693A":"#4A6741";
+  var btnCls=isPJ?"btn bpj":"btn bpf";
+  var arr=dividaArr(isPJ);
+
+  var divCard=ce("div","card");divCard.style.padding="20px";
+  var sh=ce("div","sh");sh.style.marginBottom="14px";
+  sh.innerHTML="<div style='font-size:13px;font-weight:700;color:var(--tx)'>Dívidas</div>";
+  var addBtn=ce("button",btnCls);addBtn.textContent="+ Nova dívida";
+  addBtn.onclick=function(){isPJ?oAddDividaPJ():oAddDivida()};sh.appendChild(addBtn);divCard.appendChild(sh);
+
+  if(!arr.length){
+    var em=ce("div");em.style.cssText="text-align:center;padding:32px 16px";
+    em.innerHTML="<div style='font-size:32px;margin-bottom:12px'>💸</div>"
+      +"<div style='font-size:14px;font-weight:600;color:var(--tx);margin-bottom:8px'>Você ainda não cadastrou nenhuma dívida.</div>"
+      +"<div style='font-size:12px;color:#9ca3af'>Clique em + Nova dívida para começar.</div>";
+    divCard.appendChild(em);
+  } else {
+    var SIS_LBL={price:"Price",sac:"SAC",simples:"Simples"};
+    arr.forEach(function(debt,idx){
+      var info=parcelasPagasInfo(debt);
+      var pct=info.total?Math.min((info.pagas/info.total)*100,100):0;
+      var devido=totalDevido(debt);
+      var prox=proximaParcela(debt);
+      var encerrada=debt.status==="encerrada"||debt.status==="quitada";
+      var box=ce("div","card");box.style.marginBottom="8px";
+      if(encerrada)box.style.opacity="0.65";
+
+      var hdr=ce("div");hdr.style.cssText="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px";
+      hdr.innerHTML="<div><div style='font-size:13px;font-weight:700;color:var(--tx)'>"+debt.nome+(debt.status==="quitada"?" <span style='font-size:9px;font-weight:700;color:#059669;border:1px solid #bbf7d0;border-radius:20px;padding:1px 7px;vertical-align:middle'>QUITADA</span>":debt.status==="encerrada"?" <span style='font-size:9px;font-weight:700;color:#9ca3af;border:1px solid #d1d5db;border-radius:20px;padding:1px 7px;vertical-align:middle'>ENCERRADA</span>":"")+"</div>"
+        +"<div style='font-size:11px;color:#9ca3af'>"+debt.instituicao+" · "+(SIS_LBL[debt.sistema]||debt.sistema)+"</div></div>"
+        +"<div style='text-align:right'><div style='font-family:Cormorant Garamond,serif;font-size:16px;color:"+cor+"'>"+R(devido)+"</div>"
+        +"<div style='font-size:10px;color:#9ca3af'>valor devido</div></div>";
+      box.appendChild(hdr);
+
+      var grid=ce("div");grid.style.cssText="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:11px;color:#6b7280;margin-bottom:10px";
+      function detail(l,v){return "<div><div style='color:#9ca3af;font-size:10px'>"+l+"</div><div style='font-weight:600;color:var(--tx)'>"+v+"</div></div>"}
+      grid.innerHTML=detail("Valor total",R(debt.valorTotal))
+        +detail("Taxa",debt.taxaJuros+"% "+(debt.taxaUnidade==="aa"?"a.a.":"a.m."))
+        +detail("Parcelas",info.pagas+"/"+info.total)
+        +(prox?detail("Próxima parcela",R(prox.valorParcela)+" · "+prox.dataVencimento):detail("Status","Quitada"));
+      box.appendChild(grid);
+      box.appendChild(pb(pct,encerrada?"#9ca3af":cor,5));
+
+      var brow=ce("div","brow");
+      var verB=ce("button","btn");verB.style.cssText="font-size:11px;padding:6px 10px;background:#f0f9ff;color:#0284c7;border:1px solid #bae6fd";verB.textContent="📋 Ver parcelas";
+      (function(ii){verB.onclick=function(){verParcelasDivida(ii,isPJ)}})(idx);
+      var editB=ce("button","eb");editB.textContent="✏️";
+      (function(ii){editB.onclick=function(){oEditDivida(ii,isPJ)}})(idx);
+      var delB=ce("button","db");delB.textContent="🗑";
+      (function(id){delB.onclick=function(){delDivida(isPJ,id)}})(debt.id);
+      brow.appendChild(verB);brow.appendChild(editB);brow.appendChild(delB);box.appendChild(brow);
+      divCard.appendChild(box);
+    });
+  }
+  c.appendChild(divCard);
+}
+
 function rInvest(c){
   var invs=D.investments||[];
   var objs=D.objectives||[];
@@ -3076,6 +3260,149 @@ function oVincularForm(isPJ,idx,inv){
   save.onclick=function(){
     linkInitialValue(isPJ,isPJ?D.pjInvestments:D.investments,idx,accSel.value);
     oM(false,"m2");nav("invest");
+  };
+  brow.appendChild(cancel);brow.appendChild(save);bd.appendChild(brow);oM(true,"m2");
+}
+
+// ── Modal: Nova Dívida ────────────────────────────────────────────────────────
+function oAddDivida(){oAddDividaForm(false)}
+function oAddDividaPJ(){oAddDividaForm(true)}
+function oAddDividaForm(isPJ){
+  var bd=gi("m2b");bd.innerHTML="";
+  var tt=ce("div","mt");tt.textContent="Nova dívida"+(isPJ?" — PJ":"");bd.appendChild(tt);
+  function lbl(t){var l=ce("label","lbl");l.textContent=t;return l}
+  function inp(id,ph,type){var i=ce("input","inp");i.id=id;i.placeholder=ph||"";i.type=type||"text";i.style.marginBottom="8px";return i}
+  bd.appendChild(lbl("Nome da dívida *"));bd.appendChild(inp("dv-nome","Ex: Financiamento veículo, Empréstimo pessoal"));
+  bd.appendChild(lbl("Instituição *"));bd.appendChild(inp("dv-inst","Ex: Banco do Brasil, Nubank"));
+  bd.appendChild(lbl("Valor total (R$) *"));bd.appendChild(inp("dv-val","0,00","number"));
+  var g2=ce("div");g2.style.cssText="display:grid;grid-template-columns:2fr 1fr;gap:8px";
+  var taxaW=ce("div");taxaW.appendChild(lbl("Taxa de juros *"));var taxaI=ce("input","inp");taxaI.id="dv-taxa";taxaI.type="number";taxaI.placeholder="Ex: 2,5";taxaW.appendChild(taxaI);g2.appendChild(taxaW);
+  var unitW=ce("div");unitW.appendChild(lbl("Unidade"));var unitS=ce("select","inp sel");unitS.id="dv-taxa-unit";
+  [{v:"am",l:"% a.m."},{v:"aa",l:"% a.a."}].forEach(function(o){var op=ce("option");op.value=o.v;op.textContent=o.l;unitS.appendChild(op)});
+  unitW.appendChild(unitS);g2.appendChild(unitW);
+  bd.appendChild(g2);
+  bd.appendChild(lbl("Prazo (nº de parcelas) *"));bd.appendChild(inp("dv-prazo","Ex: 24","number"));
+  bd.appendChild(lbl("Sistema de amortização *"));
+  var sisS=ce("select","inp sel");sisS.id="dv-sistema";sisS.style.marginBottom="8px";
+  [{v:"price",l:"Price (parcelas fixas)"},{v:"sac",l:"SAC (parcelas decrescentes)"},{v:"simples",l:"Simples (total ÷ parcelas, sem juros compostos)"}].forEach(function(o){var op=ce("option");op.value=o.v;op.textContent=o.l;sisS.appendChild(op)});
+  bd.appendChild(sisS);
+  bd.appendChild(lbl("Data da 1ª parcela *"));bd.appendChild(inp("dv-data","","date"));
+  bd.appendChild(lbl("Observação (opcional)"));var obs=ce("textarea","inp");obs.id="dv-obs";obs.rows=2;obs.style.marginBottom="8px";bd.appendChild(obs);
+
+  var previewBox=ce("div");previewBox.id="dv-preview";previewBox.style.cssText="font-size:11px;color:#6b7280;background:#f9fafb;border-radius:8px;padding:10px;margin-bottom:8px";
+  bd.appendChild(previewBox);
+  function refreshPreview(){
+    var val=parseFloat(gi("dv-val").value)||0;
+    var taxa=parseFloat(gi("dv-taxa").value)||0;
+    var unit=gi("dv-taxa-unit").value;
+    var prazo=parseInt(gi("dv-prazo").value)||0;
+    var sistema=gi("dv-sistema").value;
+    var data=gi("dv-data").value;
+    if(!val||!prazo||!data){previewBox.textContent="Preencha os campos para ver a prévia das parcelas.";return}
+    var parcelas=gerarParcelasDivida(sistema,val,taxa,unit,prazo,data);
+    var primeira=parcelas[0],ultima=parcelas[parcelas.length-1];
+    var totalPago=parcelas.reduce(function(s,p){return s+p.valorParcela},0);
+    previewBox.innerHTML="1ª parcela: <b>"+R(primeira.valorParcela)+"</b>"+(sistema!=="price"?" · última: <b>"+R(ultima.valorParcela)+"</b>":"")+"<br>Total a pagar: <b>"+R(totalPago)+"</b> (juros: "+R(totalPago-val)+")";
+  }
+  ["dv-val","dv-taxa","dv-taxa-unit","dv-prazo","dv-sistema","dv-data"].forEach(function(id){gi(id).oninput=refreshPreview;gi(id).onchange=refreshPreview});
+  refreshPreview();
+
+  var brow=ce("div","brow");
+  var cancel=ce("button","btn bou");cancel.textContent="Cancelar";cancel.onclick=function(){oM(false,"m2")};
+  var save=ce("button",isPJ?"btn bpj":"btn bpf");save.textContent="Salvar";
+  save.onclick=function(){
+    var nome=gi("dv-nome").value.trim();var inst=gi("dv-inst").value.trim();
+    var val=parseFloat(gi("dv-val").value)||0;var taxa=parseFloat(gi("dv-taxa").value)||0;
+    var unit=gi("dv-taxa-unit").value;var prazo=parseInt(gi("dv-prazo").value)||0;
+    var sistema=gi("dv-sistema").value;var data=gi("dv-data").value;
+    if(!nome){alert("Informe o nome da dívida.");return}
+    if(!inst){alert("Informe a instituição.");return}
+    if(!val||val<=0){alert("Informe um valor total maior que zero.");return}
+    if(!prazo||prazo<=0){alert("Informe um prazo válido (nº de parcelas).");return}
+    if(!data){alert("Informe a data da primeira parcela.");return}
+    var parcelas=gerarParcelasDivida(sistema,val,taxa,unit,prazo,data);
+    var debt={id:Date.now(),nome:nome,instituicao:inst,valorTotal:val,taxaJuros:taxa,taxaUnidade:unit,
+      prazo:prazo,sistema:sistema,dataPrimeiraParcela:data,observacao:obs.value.trim(),
+      status:"ativa",parcelas:parcelas,createdAt:new Date().toISOString()};
+    (isPJ?(D.pjDebts=D.pjDebts||[]):(D.debts=D.debts||[])).push(debt);
+    sv();oM(false,"m2");nav("dividas");
+  };
+  brow.appendChild(cancel);brow.appendChild(save);bd.appendChild(brow);oM(true,"m2");
+}
+
+function oEditDivida(idx,isPJ){
+  var arr=dividaArr(isPJ);var debt=arr[idx];if(!debt)return;
+  var bd=gi("m2b");bd.innerHTML="";
+  var tt=ce("div","mt");tt.textContent="Editar dívida";bd.appendChild(tt);
+  var note=ce("div");note.style.cssText="font-size:11px;color:#6b7280;background:#f9fafb;border-radius:8px;padding:10px;margin-bottom:10px";
+  note.textContent="Valor, taxa, prazo e sistema de amortização não podem ser editados depois do cadastro (as parcelas já foram geradas). Para alterar esses dados, exclua e cadastre novamente.";
+  bd.appendChild(note);
+  function lbl(t){var l=ce("label","lbl");l.textContent=t;return l}
+  function inp(id,val){var i=ce("input","inp");i.id=id;i.value=val||"";i.style.marginBottom="8px";return i}
+  bd.appendChild(lbl("Nome *"));bd.appendChild(inp("ed-nome",debt.nome));
+  bd.appendChild(lbl("Instituição *"));bd.appendChild(inp("ed-inst",debt.instituicao));
+  bd.appendChild(lbl("Observação"));var obs=ce("textarea","inp");obs.id="ed-obs";obs.rows=2;obs.value=debt.observacao||"";obs.style.marginBottom="8px";bd.appendChild(obs);
+  var brow=ce("div","brow");
+  var cancel=ce("button","btn bou");cancel.textContent="Cancelar";cancel.onclick=function(){oM(false,"m2")};
+  var save=ce("button",isPJ?"btn bpj":"btn bpf");save.textContent="Salvar";
+  save.onclick=function(){
+    var nome=gi("ed-nome").value.trim();var inst=gi("ed-inst").value.trim();
+    if(!nome){alert("Informe o nome.");return}
+    if(!inst){alert("Informe a instituição.");return}
+    debt.nome=nome;debt.instituicao=inst;debt.observacao=obs.value.trim();
+    sv();oM(false,"m2");nav("dividas");
+  };
+  brow.appendChild(cancel);brow.appendChild(save);bd.appendChild(brow);oM(true,"m2");
+}
+
+// ── Modal: parcelas da dívida ──────────────────────────────────────────────────
+function verParcelasDivida(idx,isPJ){
+  var arr=dividaArr(isPJ);var debt=arr[idx];if(!debt)return;
+  var bd=gi("m2b");bd.innerHTML="";
+  var tt=ce("div","mt");tt.textContent="Parcelas · "+debt.nome;bd.appendChild(tt);
+  (debt.parcelas||[]).forEach(function(p){
+    var isPago=p.status==="paga";
+    var isVenc=!isPago&&p.dataVencimento<tod();
+    var box=ce("div");box.style.cssText="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;border-radius:8px;margin-bottom:6px;background:"+(isPago?"#f0fdf4":isVenc?"#fef2f2":"#fafafe")+";border:1px solid "+(isPago?"#bbf7d0":isVenc?"#fecaca":"#eaf0e8");
+    var left=ce("div");
+    left.innerHTML="<div style='font-size:12px;font-weight:600'>Parcela "+p.numero+"/"+debt.parcelas.length+" — "+R(p.valorParcela)+"</div>"
+      +"<div style='font-size:10.5px;color:#9ca3af'>Vencimento: "+p.dataVencimento+(isPago?" · Paga em "+p.dataPagamento:isVenc?" · <span style='color:#dc2626'>Vencida</span>":"")+"</div>";
+    box.appendChild(left);
+    var right=ce("div");
+    if(isPago){
+      var undoB=ce("button");undoB.style.cssText="font-size:10.5px;padding:4px 8px;border-radius:6px;border:1px solid #d1d5db;background:#fff;cursor:pointer";undoB.textContent="Desfazer";
+      undoB.onclick=function(){desmarcarParcelaPaga(isPJ,debt.id,p.numero);verParcelasDivida(idx,isPJ)};
+      right.appendChild(undoB);
+    } else {
+      var payB=ce("button",isPJ?"btn bpj":"btn bpf");payB.style.cssText="font-size:10.5px;padding:5px 10px";payB.textContent="Marcar como paga";
+      payB.onclick=function(){oMarcarParcelaPagaForm(isPJ,debt.id,p.numero,idx)};
+      right.appendChild(payB);
+    }
+    box.appendChild(right);bd.appendChild(box);
+  });
+  var brow=ce("div","brow");
+  var close=ce("button","btn bou");close.style.flex="1";close.textContent="Fechar";close.onclick=function(){oM(false,"m2")};
+  brow.appendChild(close);bd.appendChild(brow);oM(true,"m2");
+}
+
+function oMarcarParcelaPagaForm(isPJ,debtId,numero,debtIdx){
+  var bd=gi("m2b");bd.innerHTML="";
+  var tt=ce("div","mt");tt.textContent="Marcar parcela como paga";bd.appendChild(tt);
+  var accs=invEnvAccounts(isPJ);
+  var lbl=ce("label","lbl");lbl.textContent="Conta de pagamento (opcional)";bd.appendChild(lbl);
+  var sel=ce("select","inp sel");sel.style.marginBottom="8px";
+  var opNone=ce("option");opNone.value="";opNone.textContent="Não debitar de nenhuma conta";sel.appendChild(opNone);
+  accs.forEach(function(a){var op=ce("option");op.value=a.id;op.textContent=a.name+" — "+(a.bank||"");sel.appendChild(op)});
+  bd.appendChild(sel);
+  var note=ce("div");note.style.cssText="font-size:10.5px;color:#6b7280;margin-bottom:8px";
+  note.textContent="Se você escolher uma conta, o valor da parcela será debitado do saldo dela.";
+  bd.appendChild(note);
+  var brow=ce("div","brow");
+  var cancel=ce("button","btn bou");cancel.textContent="Cancelar";cancel.onclick=function(){oM(false,"m2")};
+  var save=ce("button",isPJ?"btn bpj":"btn bpf");save.textContent="Confirmar";
+  save.onclick=function(){
+    marcarParcelaPaga(isPJ,debtId,numero,sel.value||null);
+    oM(false,"m2");verParcelasDivida(debtIdx,isPJ);
   };
   brow.appendChild(cancel);brow.appendChild(save);bd.appendChild(brow);oM(true,"m2");
 }
@@ -5218,6 +5545,22 @@ function rPFCalend(c, mk){
     }
   });
 
+  // 4. Parcelas de dívidas vencendo no mês (mesmo formato — reaproveita a renderização acima)
+  (D.debts||[]).forEach(function(debt){
+    (debt.parcelas||[]).forEach(function(p){
+      if(p.dataVencimento&&p.dataVencimento.startsWith(mkStr)){
+        parcelas.push({
+          id:"div_"+debt.id+"_"+p.numero,
+          type:"parcela",
+          date:p.dataVencimento,
+          description:debt.nome+" ("+p.numero+"/"+debt.parcelas.length+")",
+          amount:p.valorParcela,
+          paid:p.status==="paga"
+        });
+      }
+    });
+  });
+
   // ── Montar mapa de dias ───────────────────────────────────────
   var dayMap={};
   function markDay(dStr,type){if(!dayMap[dStr])dayMap[dStr]={};dayMap[dStr][type]=true}
@@ -5408,10 +5751,19 @@ function rCalend(c,mk){
   var mkStr=mk_(vy,vm);
   var allTxs=(D.pj.transactions||[]).filter(function(t){return t.date&&t.date.startsWith(mkStr)});
   var allAg=(D.agenda||[]).filter(function(a){return a.date&&a.date.startsWith(mkStr)&&a.value>0&&a.status!=="cancelado"});
+  var divParcelas=[];
+  (D.pjDebts||[]).forEach(function(debt){
+    (debt.parcelas||[]).forEach(function(p){
+      if(p.dataVencimento&&p.dataVencimento.startsWith(mkStr)&&p.status!=="paga"){
+        divParcelas.push({date:p.dataVencimento,description:debt.nome+" ("+p.numero+"/"+debt.parcelas.length+")",amount:p.valorParcela});
+      }
+    });
+  });
   var dayMap={};
   function markDay(dStr,type){if(!dayMap[dStr])dayMap[dStr]={};dayMap[dStr][type]=true}
   allTxs.forEach(function(t){if(t.pending)markDay(t.date,"pend");else if(t.type==="entrada")markDay(t.date,"in");else markDay(t.date,"out")});
   allAg.forEach(function(a){markDay(a.date,"pend")});
+  divParcelas.forEach(function(p){markDay(p.date,"pend")});
 
   var firstDay=new Date(vy,vm,1).getDay();
   var daysInMonth=new Date(vy,vm+1,0).getDate();
@@ -5481,16 +5833,28 @@ function rCalend(c,mk){
   var selLabel=selD.getDate()+" de "+MF[selD.getMonth()]+" "+selD.getFullYear();
   var txDay=allTxs.filter(function(t){return t.date===selDate});
   var agDay=(D.agenda||[]).filter(function(a){return a.date===selDate&&a.value>0&&!a.paid&&a.status!=="cancelado"});
+  var divDay=divParcelas.filter(function(p){return p.date===selDate});
 
   var detCard=ce("div","card");detCard.style.marginTop="8px";
   var detSh=ce("div","sh");
   detSh.innerHTML="<div class='st'>"+selLabel+"</div>";
   detCard.appendChild(detSh);
 
-  if(!txDay.length&&!agDay.length){
+  if(!txDay.length&&!agDay.length&&!divDay.length){
     var emDiv=ce("div");emDiv.style.cssText="text-align:center;padding:16px;color:#9ca3af;font-size:12px";
     emDiv.textContent="Nenhum evento neste dia";detCard.appendChild(emDiv)
   }
+
+  // Parcelas de dívida do dia
+  divDay.forEach(function(p){
+    var rw=ce("div","txr");
+    rw.innerHTML="<div class='txi' style='background:#fef3c7'>💸</div>"
+      +"<div class='txin'><div class='txd'>"+p.description+"</div>"
+      +"<div class='txm'>Parcela de dívida · <b style='color:#d97706'>A vencer</b></div></div>"
+      +"<span class='txa' style='color:#dc2626'>"+R(p.amount)+"</span>";
+    detCard.appendChild(rw)
+  });
+
 
   // Baixar modal
   function oBaixarCal(item,isAg){
