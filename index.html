@@ -111,7 +111,7 @@ button,input,select,textarea{font-family:inherit;font-size:14px}
 .ct{flex:1;overflow-y:auto;padding:14px 14px 70px;display:flex;flex-direction:column;gap:11px}
 
 /* ─── BOTTOM NAV (mobile) ────────────────────────────────────────── */
-#bn{position:fixed;bottom:0;left:0;right:0;box-sizing:border-box;background:rgba(255,255,255,.97);backdrop-filter:blur(20px);border-top:1px solid var(--bd);display:grid;grid-auto-flow:column;grid-auto-columns:1fr;padding:0 0 env(safe-area-inset-bottom);z-index:100;height:var(--bn-h);width:100%;overflow:hidden}
+#bn{position:fixed;bottom:0;left:0;right:0;box-sizing:border-box;background:rgba(255,255,255,.97);backdrop-filter:blur(20px);border-top:1px solid var(--bd);display:grid;grid-auto-flow:column;grid-auto-columns:1fr;padding:0 0 env(safe-area-inset-bottom);z-index:100;height:calc(var(--bn-h) + env(safe-area-inset-bottom));width:100%;overflow:hidden}
 .nb{width:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:6px 2px 8px;border:none;background:none;cursor:pointer;font-size:10px;color:var(--fa);font-family:inherit;-webkit-tap-highlight-color:transparent;text-align:center;overflow:hidden;box-sizing:border-box}
 .nb.on{color:var(--pf)}.nb.onpj{color:var(--pj)}
 .nb-i{font-size:20px;line-height:1;display:block;text-align:center;height:24px}
@@ -236,18 +236,16 @@ button,input,select,textarea{font-family:inherit;font-size:14px}
   position:fixed;
   bottom:calc(var(--bn-h) + env(safe-area-inset-bottom) + 62px);
   right:12px;
-  height:44px;
-  padding:0 18px;
-  border-radius:24px;
+  width:44px;height:44px;
+  border-radius:50%;
   background:linear-gradient(135deg,#4A6741,#6B8F62);
   border:none;
-  color:#fff;font-size:14px;font-weight:700;
+  color:#fff;font-size:24px;font-weight:300;
   cursor:pointer;
   z-index:101;
   align-items:center;justify-content:center;
   box-shadow:0 4px 14px rgba(74,103,65,.4);
   line-height:1;
-  white-space:nowrap;
   touch-action:none;
   user-select:none;
   -webkit-user-select:none;
@@ -296,7 +294,7 @@ button,input,select,textarea{font-family:inherit;font-size:14px}
   .main{width:100%;min-width:0;overflow-x:hidden}
 
   /* ── Content area ── */
-  .ct{padding:10px 10px 72px;gap:10px;overflow-x:hidden;width:100%}
+  .ct{padding:10px 10px calc(72px + env(safe-area-inset-bottom));gap:10px;overflow-x:hidden;width:100%}
 
   /* ── Grids: always max 2 cols on mobile ── */
   .g4,.g3,.kpi-g,.kpi-hrow{grid-template-columns:1fr 1fr!important}
@@ -307,7 +305,7 @@ button,input,select,textarea{font-family:inherit;font-size:14px}
   .card{border-radius:12px;padding:12px;width:100%}
   .csm{border-radius:10px;padding:10px 12px;width:100%}
   .hero{width:100%;overflow:hidden}
-  .hero-main{min-height:196px;padding:24px 20px 22px;display:flex;flex-direction:column;justify-content:center}
+  .hero-main{min-height:199px;padding:24px 20px 22px;display:flex;flex-direction:column;justify-content:center}
 
   /* ── Topbar ── */
   .tb{padding:0 10px;width:100%;gap:6px}
@@ -603,7 +601,7 @@ button,input,select,textarea{font-family:inherit;font-size:14px}
   <!-- BOTTOM NAV (mobile only) -->
   <nav id="bn"></nav>
   <!-- Floating buttons (mobile) -->
-  <button id="add-fab" onclick="oLanc()" title="Lançar" aria-label="Lançar novo registro">+ Lançar</button>
+  <button id="add-fab" onclick="oLanc()" title="Lançar" aria-label="Lançar novo registro">+</button>
   <button id="luna-fab" onclick="nav('luna')" title="Luna IA" aria-label="Abrir Luna IA">✨</button>
 </div>
 
@@ -1846,7 +1844,9 @@ function initPJCats(){
 // (abre a função normal) de arraste (reposiciona e salva a posição).
 var DRAG_THRESHOLD=8; // px
 function clampFabPosition(x,y,w,h){
-  var tbH=52,bnH=58; // --tb-h / --bn-h
+  var bnEl=gi("bn");var tbEl=document.querySelector(".tb");
+  var tbH=tbEl?tbEl.getBoundingClientRect().height:52;
+  var bnH=bnEl?bnEl.getBoundingClientRect().height:58;
   var safeTop=(window.visualViewport&&window.visualViewport.offsetTop)||0;
   var minX=8;
   var maxX=Math.max(minX,window.innerWidth-w-8);
