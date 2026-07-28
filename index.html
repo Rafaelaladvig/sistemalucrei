@@ -116,6 +116,7 @@ button,input,select,textarea{font-family:inherit;font-size:14px}
 .nb span:last-child{max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block;line-height:1.1}
 .nb.on{color:var(--pf)}.nb.onpj{color:var(--pj)}
 .nb-i{font-size:25px;line-height:1;display:flex;align-items:center;justify-content:center;height:29px;width:100%}
+.nb-menu{transform:translateX(10px)}
 
 /* ═══ CARDS ══════════════════════════════════════════════════════════════════ */
 .card{background:#fff;border-radius:14px;padding:14px;border:1px solid var(--bd)}
@@ -2152,12 +2153,12 @@ function renderBN(){
   var cls=panel==="pf"?"on":"onpj";
   bnIds.forEach(function(id){
     if(id==="__menu__"){
-      var mb=ce("button","nb");
+      var mb=ce("button","nb nb-menu");
       mb.innerHTML="<span class='nb-i'>☰</span><span>Menu</span>";
       mb.onclick=function(){openPJMenu()};bn.appendChild(mb);return
     }
     if(id==="__menu_pf__"){
-      var mpfb=ce("button","nb");
+      var mpfb=ce("button","nb nb-menu");
       mpfb.innerHTML="<span class='nb-i'>☰</span><span>Menu</span>";
       mpfb.onclick=function(){openPFMenu()};bn.appendChild(mpfb);return
     }
