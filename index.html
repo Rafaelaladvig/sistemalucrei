@@ -232,7 +232,7 @@ button,input,select,textarea{font-family:inherit;font-size:14px}
 @keyframes slideUp{from{transform:translateY(14px);opacity:0}to{transform:translateY(0);opacity:1}}
 .su{animation:slideUp .2s ease}
 
-/* ── + Lançar FAB button (mobile only) — arrastável ── */
+#sync-badge{display:none;position:fixed;top:calc(var(--tb-h) + 6px);right:10px;z-index:200;align-items:center;padding:5px 10px;border-radius:14px;border:1px solid;font-size:10.5px;font-weight:600;box-shadow:0 4px 12px rgba(0,0,0,.1);max-width:min(260px,70vw);white-space:normal;line-height:1.3;background:#fff;transition:opacity .2s}
 #add-fab{
   display:none;
   position:fixed;
@@ -491,7 +491,7 @@ button,input,select,textarea{font-family:inherit;font-size:14px}
     <div id="aerr" class="aerr"></div>
     <input id="a-nm" class="ai" placeholder="Nome completo" type="text">
     <input id="a-ph" class="ai" placeholder="WhatsApp com DDD (ex: 51999999999)" type="tel" inputmode="numeric" style="display:none">
-    <input id="a-em" class="ai" placeholder="E-mail" type="text">
+    <input id="a-em" class="ai" placeholder="E-mail" type="email" autocapitalize="off" autocorrect="off" spellcheck="false" autocomplete="email">
     <input id="a-pw" class="ai" placeholder="Senha (mínimo 6 caracteres)" type="password">
     <div id="a-psel">
       <div style="font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#9ca3af;margin-bottom:9px">PERFIL</div>
@@ -527,7 +527,7 @@ button,input,select,textarea{font-family:inherit;font-size:14px}
       <div id="fp-s1">
         <p style="font-size:13px;color:#6b7280;margin-bottom:14px;text-align:center">Digite seu e-mail cadastrado.</p>
         <div id="fp-err" style="background:#fee2e2;border-radius:9px;padding:9px 13px;font-size:12px;color:#dc2626;margin-bottom:10px;display:none"></div>
-        <input id="fp-em" class="ai" placeholder="Seu e-mail" type="text">
+        <input id="fp-em" class="ai" placeholder="Seu e-mail" type="email" autocapitalize="off" autocorrect="off" spellcheck="false" autocomplete="email">
         <button id="fp-send-btn" class="abtn">Continuar →</button>
         <div class="alink" style="margin-top:10px"><a id="fp-back">← Voltar ao login</a></div>
       </div>
@@ -603,6 +603,7 @@ button,input,select,textarea{font-family:inherit;font-size:14px}
   <!-- BOTTOM NAV (mobile only) -->
   <nav id="bn"></nav>
   <!-- Floating buttons (mobile) -->
+  <div id="sync-badge" role="status" aria-live="polite"></div>
   <button id="add-fab" onclick="oLanc()" title="Lançar" aria-label="Lançar novo registro">+</button>
   <button id="luna-fab" onclick="nav('luna')" title="Luna IA" aria-label="Abrir Luna IA">✨</button>
 </div>
@@ -1068,6 +1069,7 @@ function ldUser(email){
 // Load from cloud and merge (called after boot for background sync)
 async function syncFromCloud(){
   if(!_email)return;
+  setSyncStatus("sincronizando");
   try{
     var cloud=null, cloudUpdatedAt=null;
 
@@ -1085,6 +1087,8 @@ async function syncFromCloud(){
         console.warn("Railway load indisponível, usando fallback Supabase direto");
         var row=await sbGet("lucrei_data",{email:_email});
         if(row&&row.data){cloud=row.data;cloudUpdatedAt=row.updated_at}
+      }else if(!apiResLoad.ok){
+        console.warn("Falha ao carregar dados da nuvem:",apiResLoad.status,apiResLoad.data);
       }
     }else if(_cloudEnabled){
       var row2=await sbGet("lucrei_data",{email:_email});
@@ -1094,6 +1098,9 @@ async function syncFromCloud(){
     if(cloud){
       // Compare by recency timestamp (covers ALL collections: transactions, accounts, cards,
       // investments, objectives, clients, agenda, plans, config — not just transaction count).
+      // D._syncedAt agora só é carimbado quando o SERVIDOR confirma um save (ver sv()/triggerSyncPush),
+      // então essa comparação passou a ser confiável: um dispositivo com uma gravação pendente/falha
+      // não vai mais "vencer" essa comparação injustamente contra dados mais novos da nuvem.
       var localStamp=D._syncedAt?new Date(D._syncedAt).getTime():0;
       var cloudStamp=cloud._syncedAt?new Date(cloud._syncedAt).getTime():(cloudUpdatedAt?new Date(cloudUpdatedAt).getTime():0);
       var shouldAdoptCloud;
@@ -1110,28 +1117,190 @@ async function syncFromCloud(){
         if(typeof nav==="function")nav(tab);
       }
     }
+  }catch(e){
+    console.warn("syncFromCloud falhou:",e);
+  }
+  // Depois do pull (adotou a nuvem ou manteve o local), garantir que o estado final
+  // de D seja confirmado no servidor — cobre o caso de haver uma mudança local pendente
+  // que nunca chegou a ser salva (ex: sessão anterior fechada no meio de um envio).
+  triggerSyncPush();
+}
+// ── Coordenação entre abas do mesmo navegador ─────────────────────────────────
+// _syncInFlight/_syncDirty só existem na memória desta aba. Duas abas da mesma
+// usuária têm objetos D independentes, então sem isso uma aba pode sobrescrever
+// silenciosamente o que a outra acabou de salvar.
+var _tabId=Math.random().toString(36).slice(2)+Date.now().toString(36);
+var _syncChannel=null;
+try{if("BroadcastChannel" in window)_syncChannel=new BroadcastChannel("lucrei-sync")}catch(e){}
+
+function broadcastDataChanged(){
+  if(!_email)return;
+  var msg={type:"data-changed",email:_email,tabId:_tabId,syncedAt:D._syncedAt};
+  if(_syncChannel){try{_syncChannel.postMessage(msg)}catch(e){}}
+}
+function adoptFromLocalStorageIfNewer(){
+  try{
+    var raw=ls_get(dk());if(!raw)return;
+    var other=JSON.parse(raw);
+    var otherStamp=other._syncedAt?new Date(other._syncedAt).getTime():0;
+    var localStamp=D._syncedAt?new Date(D._syncedAt).getTime():0;
+    if(otherStamp>localStamp){
+      Object.keys(other).forEach(function(k){D[k]=other[k]});
+      if(typeof nav==="function")nav(tab);
+      setSyncStatus("salvo");
+    }
+    // Se a outra aba não é mais nova, não faz nada — não sobrescreve o que esta aba possa estar editando agora.
   }catch(e){}
 }
-function sv(){
-  if(!_email)return;
-  D._syncedAt=new Date().toISOString();// stamp every save so cross-device sync can compare recency, not just transaction count
-  var json=JSON.stringify(D);
-  ls_set(dk(),json);// save locally immediately
+if(_syncChannel){
+  _syncChannel.onmessage=function(ev){
+    var msg=ev.data;
+    if(!msg||msg.type!=="data-changed")return;
+    if(msg.tabId===_tabId)return; // mensagem da própria aba
+    if(msg.email!==_email)return; // outra usuária logada em outra aba
+    adoptFromLocalStorageIfNewer();
+  };
+}
+window.addEventListener("storage",function(ev){
+  if(!_email||ev.key!==dk())return;
+  adoptFromLocalStorageIfNewer();
+});
 
-  // ── ETAPA 2.3: Salvar via Railway (com fallback Supabase direto) ──────────
-  if(MIGRATION_FLAGS.data){
-    apiCall("/api/data/save", {method:"POST", body:{data:D}}).then(function(res){
-      if(!res.ok && _cloudEnabled){
-        // Erro de rede/servidor — fallback Supabase direto
-        sbUpsert("lucrei_data",{email:_email,data:D,updated_at:D._syncedAt}).catch(function(){});
+// ── Identificação do dispositivo + revisão (contrato pronto para o backend) ──
+// O backend AINDA não valida baseRevision (isso depende do repositório Lucrei-whatsapp,
+// fora deste arquivo). O frontend já envia os campos necessários para quando existir.
+function getDeviceId(){
+  var id=ls_get("lc-device-id");
+  if(!id){id="dev_"+Math.random().toString(36).slice(2)+Date.now().toString(36);ls_set("lc-device-id",id)}
+  return id;
+}
+var _deviceId=getDeviceId();
+var _lastConflict=null; // guarda o snapshot conflitante mais recente para exportação
+
+function exportJSON(obj,filename){
+  try{
+    var blob=new Blob([JSON.stringify(obj,null,2)],{type:"application/json"});
+    var url=URL.createObjectURL(blob);
+    var a=document.createElement("a");a.href=url;a.download=filename;document.body.appendChild(a);a.click();
+    setTimeout(function(){document.body.removeChild(a);URL.revokeObjectURL(url)},1000);
+  }catch(e){}
+}
+function showConflictNotice(cloudSnapshot){
+  _lastConflict={local:JSON.parse(JSON.stringify(D)),cloud:cloudSnapshot,at:new Date().toISOString()};
+  console.warn("Conflito de sincronização detectado (409). Snapshots preservados em _lastConflict.",_lastConflict);
+  setSyncStatus("conflito");
+  var el=gi("sync-badge");
+  if(el){
+    el.onclick=function(){
+      if(confirm("Encontramos alterações feitas em outro dispositivo.\n\nSeus dados locais NÃO foram perdidos. Deseja baixar as duas versões (local e do servidor) para comparar antes de decidir qual manter?")){
+        exportJSON(_lastConflict.local,"lucrei_versao_local_"+Date.now()+".json");
+        exportJSON(_lastConflict.cloud,"lucrei_versao_servidor_"+Date.now()+".json");
       }
-    }).catch(function(){
-      if(_cloudEnabled)sbUpsert("lucrei_data",{email:_email,data:D,updated_at:D._syncedAt}).catch(function(){});
-    });
-  }else if(_cloudEnabled){
-    sbUpsert("lucrei_data",{email:_email,data:D,updated_at:D._syncedAt}).catch(function(){});
+    };
   }
 }
+
+
+// "salvo" só é reportado quando o SERVIDOR confirma, nunca só porque o
+// localStorage foi escrito. Isso é o que faltava: antes, D._syncedAt era
+// carimbado otimisticamente no início de sv(), então um dispositivo com uma
+// gravação que falhou silenciosamente ainda "parecia" mais atualizado que a
+// nuvem na próxima comparação — e syncFromCloud() descartava os dados
+// corretos do servidor achando que os dados locais (errados) eram mais novos.
+var _syncStatus="salvo"; // 'salvo'|'salvando'|'nao_sincronizado'|'sem_conexao'|'sincronizando'
+var _syncInFlight=false;
+var _syncDirty=false;
+var _syncRetryTimer=null;
+var _syncRetryDelay=2000;
+
+function setSyncStatus(s){_syncStatus=s;renderSyncBadge()}
+
+function renderSyncBadge(){
+  var el=gi("sync-badge");if(!el)return;
+  var cfg={
+    salvo:        {show:true, txt:"✓ Salvo",            bg:"#f0fdf4", col:"#059669", bd:"#bbf7d0"},
+    salvando:     {show:true, txt:"Salvando...",         bg:"#f9fafb", col:"#6b7280", bd:"#e5e7eb"},
+    sincronizando:{show:true, txt:"Sincronizando...",    bg:"#f9fafb", col:"#6b7280", bd:"#e5e7eb"},
+    nao_sincronizado:{show:true, txt:"⚠️ Não sincronizado", bg:"#fef2f2", col:"#dc2626", bd:"#fecaca"},
+    sem_conexao:  {show:true, txt:"📡 Sem conexão — suas alterações serão enviadas quando a conexão voltar", bg:"#fff7ed", col:"#c2410c", bd:"#fed7aa"},
+    conflito:     {show:true, txt:"⚠️ Encontramos alterações em outro dispositivo — toque para ver", bg:"#fef2f2", col:"#dc2626", bd:"#fecaca"}
+  }[_syncStatus]||{show:false};
+  if(!cfg.show){el.style.display="none";return}
+  el.style.display="flex";
+  el.style.background=cfg.bg;el.style.color=cfg.col;el.style.borderColor=cfg.bd;
+  el.style.cursor=_syncStatus==="conflito"?"pointer":"default";
+  el.textContent=cfg.txt;
+}
+
+function sv(){
+  if(!_email)return;
+  ls_set(dk(),JSON.stringify(D)); // cache local imediato — isto NÃO é confirmação de sincronização
+  _syncDirty=true;
+  if(!navigator.onLine){setSyncStatus("sem_conexao");return}
+  triggerSyncPush();
+}
+
+function triggerSyncPush(){
+  if(!_email)return;
+  if(_syncInFlight){_syncDirty=true;return} // já existe um envio em andamento — só marca que há mudança nova
+  if(!navigator.onLine){setSyncStatus("sem_conexao");return}
+  _syncInFlight=true;_syncDirty=false;
+  setSyncStatus("salvando");
+  var snapshot=JSON.stringify(D); // captura o estado exato no momento do envio
+  var baseRevision=D._rev||0;
+  (async function(){
+    var ok=false,conflict=false,newRev=null;
+    try{
+      if(MIGRATION_FLAGS.data){
+        // baseRevision/deviceId: contrato pronto para quando o backend validar revisão
+        // (ver especificação enviada separadamente). Hoje o backend pode ignorar esses
+        // campos sem quebrar nada — são extras no corpo da requisição.
+        var res=await apiCall("/api/data/save",{method:"POST",body:{data:JSON.parse(snapshot),baseRevision:baseRevision,deviceId:_deviceId}});
+        if(res.ok){ok=true;if(res.data&&typeof res.data.revision==="number")newRev=res.data.revision}
+        else if(res.status===409){conflict=true}
+        else if(_cloudEnabled)ok=await sbUpsert("lucrei_data",{email:_email,data:JSON.parse(snapshot),updated_at:new Date().toISOString()});
+      }else if(_cloudEnabled){
+        ok=await sbUpsert("lucrei_data",{email:_email,data:JSON.parse(snapshot),updated_at:new Date().toISOString()});
+      }else{
+        ok=true; // sem backend configurado nesta etapa — considerar confirmado localmente
+      }
+    }catch(e){ok=false}
+    _syncInFlight=false;
+    if(ok){
+      D._syncedAt=new Date().toISOString(); // só agora — confirmado pelo servidor
+      if(newRev!==null)D._rev=newRev;
+      ls_set(dk(),JSON.stringify(D));
+      _syncRetryDelay=2000;
+      broadcastDataChanged();
+      if(_syncDirty){triggerSyncPush()} // mudou algo durante o envio — reenviar o estado mais atual
+      else setSyncStatus("salvo");
+    }else if(conflict){
+      // 409: NÃO sobrescrever nada localmente. Buscar a versão do servidor só para
+      // preservar/exportar, sem descartar a versão local pendente.
+      try{
+        var loadRes=await apiCall("/api/data/load",{method:"GET"});
+        showConflictNotice(loadRes.ok&&loadRes.data.data?loadRes.data.data:null);
+      }catch(e){showConflictNotice(null)}
+    }else{
+      setSyncStatus("nao_sincronizado");
+      scheduleSyncRetry();
+    }
+  })();
+}
+function scheduleSyncRetry(){
+  if(_syncRetryTimer)return;
+  _syncRetryTimer=setTimeout(function(){
+    _syncRetryTimer=null;
+    if(navigator.onLine&&_email)triggerSyncPush();
+  },_syncRetryDelay);
+  _syncRetryDelay=Math.min(_syncRetryDelay*2,60000); // backoff exponencial, teto de 60s
+}
+window.addEventListener("online",function(){
+  if(!_email)return;
+  if(_syncRetryTimer){clearTimeout(_syncRetryTimer);_syncRetryTimer=null}
+  syncFromCloud(); // pull + reconciliar + push — não só reenviar local, a nuvem pode ter mudado enquanto offline
+});
+window.addEventListener("offline",function(){setSyncStatus("sem_conexao")});
 
 // Session (30 days)
 var SES_MS=30*24*60*60*1000;
