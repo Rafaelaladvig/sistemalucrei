@@ -541,17 +541,12 @@ button,input,select,textarea{font-family:inherit;font-size:14px}
       </div>
       <!-- Step 2: code -->
       <div id="fp-s2" style="display:none">
-        <p style="font-size:13px;color:#059669;margin-bottom:6px;text-align:center">✅ Identidade confirmada!</p>
-        <p style="font-size:13px;color:#6b7280;margin-bottom:14px;text-align:center">Use o código abaixo para criar sua nova senha.</p>
-        <div id="fp-code-display" style="background:linear-gradient(135deg,#4A6741,#6B8F62);border-radius:14px;padding:20px;text-align:center;margin-bottom:16px">
-          <p style="font-size:11px;color:rgba(255,255,255,.7);letter-spacing:2px;margin:0 0 8px">CÓDIGO DE VERIFICAÇÃO</p>
-          <div id="fp-code-show" style="font-size:32px;font-weight:700;color:#fff;letter-spacing:10px">------</div>
-          <p style="font-size:11px;color:rgba(255,255,255,.6);margin:8px 0 0">Válido por 15 minutos</p>
-        </div>
+        <p style="font-size:13px;color:#059669;margin-bottom:6px;text-align:center">✅ E-mail enviado!</p>
+        <p style="font-size:13px;color:#6b7280;margin-bottom:14px;text-align:center">Confira sua caixa de entrada (e o spam) e digite o código de 6 dígitos que enviamos para o seu e-mail.</p>
         <div id="fp-err2" style="background:#fee2e2;border-radius:9px;padding:9px 13px;font-size:12px;color:#dc2626;margin-bottom:10px;display:none"></div>
-        <input id="fp-code" class="ai" placeholder="Digite o código acima" type="text" maxlength="6" style="text-align:center;font-size:20px;letter-spacing:8px;font-weight:700">
+        <input id="fp-code" class="ai" placeholder="Digite o código recebido por e-mail" type="text" maxlength="6" style="text-align:center;font-size:20px;letter-spacing:8px;font-weight:700">
         <button id="fp-verify-btn" class="abtn">Verificar código</button>
-        <div class="alink" style="margin-top:10px"><a id="fp-back2">← Voltar</a></div>
+        <div class="alink" style="margin-top:10px"><a id="fp-resend">Reenviar código</a> · <a id="fp-back2">← Voltar</a></div>
       </div>
       <!-- Step 3: new password -->
       <div id="fp-s3" style="display:none">
@@ -9260,28 +9255,32 @@ async function fpSendCode(){
   var em=gi("fp-em").value.trim().toLowerCase();
   if(!em){gi("fp-err").textContent="Digite seu e-mail.";gi("fp-err").style.display="block";return}
   _fpEmail=em;
+  gi("fp-err").style.display="none";
+  var btn=gi("fp-send-btn");if(btn){btn.disabled=true;btn.textContent="Enviando..."}
 
-  // Verificar se e-mail existe via Railway
+  // Envia o código de verdade por e-mail (Railway → Gmail). Antes esta etapa
+  // pedia confirmação de WhatsApp e devolvia o código na própria resposta da
+  // API — isso foi desativado por segurança (qualquer pessoa com e-mail +
+  // parte do telefone conseguia gerar o código de outra conta). Agora o
+  // código só existe dentro do e-mail que a usuária recebe.
   if(MIGRATION_FLAGS.password){
-    var apiCheck=await apiCall("/api/password/check-email",{method:"POST",body:{email:em}});
-    if(apiCheck.ok&&!apiCheck.data.exists){
-      gi("fp-err").textContent="E-mail não encontrado.";gi("fp-err").style.display="block";return;
-    }else if(!apiCheck.ok&&apiCheck.status===0){
-      // Erro de rede — tenta localmente
-      var u0=getUsers();
-      if(!u0[em]){gi("fp-err").textContent="E-mail não encontrado.";gi("fp-err").style.display="block";return}
+    var apiResReq=await apiCall("/api/password/reset-request",{method:"POST",body:{email:em}});
+    if(btn){btn.disabled=false;btn.textContent="Continuar →"}
+    if(!apiResReq.ok){
+      gi("fp-err").textContent="Não foi possível enviar o e-mail agora. Tente novamente em instantes.";
+      gi("fp-err").style.display="block";return;
     }
-  }else{
-    var u=getUsers();var usr=u[em];
-    if(!usr&&_cloudEnabled){usr=await getUserCloud(em);}
-    if(!usr){gi("fp-err").textContent="E-mail não encontrado.";gi("fp-err").style.display="block";return}
+    // A rota sempre responde ok:true (mesmo se o e-mail não existir, por segurança —
+    // não revela se a conta existe). Vamos direto para a etapa de código.
+    gi("fp-s1").style.display="none";
+    gi("fp-s2").style.display="block";
+    gi("fp-code").value="";gi("fp-err2").style.display="none";
+    return;
   }
 
-  // Ir para step 1.5 — validação por WhatsApp
-  gi("fp-s1").style.display="none";
-  gi("fp-s15").style.display="block";
-  gi("fp-ph").value="";
-  gi("fp-err15").style.display="none";
+  if(btn){btn.disabled=false;btn.textContent="Continuar →"}
+  gi("fp-err").textContent="Recuperação de senha indisponível no momento.";
+  gi("fp-err").style.display="block";
 }
 
 async function fpValidatePhone(){
