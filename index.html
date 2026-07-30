@@ -5558,23 +5558,9 @@ async function cancelarAssinatura(){
       console.warn("Railway indisponível, fallback cancelamento");
     }
 
-    // ── Fallback: rota legada direta ───────────────────────────
-    var sid=D.asaasSubscriptionId||ls_get("_asaas_sub")||null;
-    if(!sid&&_cloudEnabled){
-      var uRow=await sbGet("lucrei_users",{email:_email||D.userEmail});
-      if(uRow&&uRow.subscription_id)sid=uRow.subscription_id;
-    }
-    if(sid){
-      var res=await fetch(API_URL+"/cancelar-assinatura",
-        {method:"POST",headers:{"Content-Type":"application/json"},
-         body:JSON.stringify({subscriptionId:sid,email:_email||D.userEmail,motivo:mt})});
-      var j=await res.json();
-      if(j.ok){
-        alert("✅ Assinatura cancelada com sucesso!\nSua conta permanece ativa até o fim do período. Obrigada! 💜")
-      }else{alert("Para cancelar, entre em contato:\nWhatsApp: (67) 99117-4813\nMotivo informado: "+mt)}
-    }else{
-      alert("Para cancelar sua assinatura, entre em contato:\nWhatsApp: (67) 99117-4813\nMotivo: "+mt+"\n\nObrigada! 💜")
-    }
+    // Railway indisponível (erro de rede) — a rota legada de fallback foi
+    // desativada por segurança (aceitava e-mail no corpo sem autenticação).
+    alert("Não conseguimos processar agora. Para cancelar sua assinatura, entre em contato:\nWhatsApp: (67) 99117-4813\nMotivo: "+mt+"\n\nObrigada! 💜")
   }catch(e){alert("Para cancelar, entre em contato:\nWhatsApp: (67) 99117-4813")}
 }
 
