@@ -7082,7 +7082,7 @@ function rPJD(c,mk){
   var objSh=ce("div","sh");
   objSh.innerHTML="<div class='st'>🎯 Objetivos financeiros</div>";
   var objBtn=ce("button","btn bpj");objBtn.style.cssText="font-size:11px;padding:5px 12px";objBtn.textContent="+ Novo";
-  (function(){objBtn.onclick=function(){oAddObj()}}());
+  (function(){objBtn.onclick=function(){oAddObjPJ()}}());
   objSh.appendChild(objBtn);objCard.appendChild(objSh);
   if(!pjObjs.length){
     var emO=ce("div");emO.style.cssText="text-align:center;padding:16px;color:#9ca3af;font-size:12px";emO.textContent="Nenhum objetivo ainda";objCard.appendChild(emO)
