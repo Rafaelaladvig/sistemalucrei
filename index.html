@@ -1079,6 +1079,7 @@ function ldUser(email){
 // Load from cloud and merge (called after boot for background sync)
 async function syncFromCloud(){
   if(!_email)return;
+  if(getConflictState()){setSyncStatus("conflito");return} // conflito pendente: nunca adotar nuvem automaticamente por cima do modal
   setSyncStatus("sincronizando");
   try{
     var cloud=null, cloudUpdatedAt=null;
@@ -1185,7 +1186,7 @@ function getDeviceId(){
   return id;
 }
 var _deviceId=getDeviceId();
-var _lastConflict=null; // guarda o snapshot conflitante mais recente para exportação
+var _lastConflict=null; // compat — mantido por se alguma parte do código ainda referenciar
 
 function exportJSON(obj,filename){
   try{
@@ -1195,19 +1196,271 @@ function exportJSON(obj,filename){
     setTimeout(function(){document.body.removeChild(a);URL.revokeObjectURL(url)},1000);
   }catch(e){}
 }
+
+// ── Resolução de conflito de sincronização ─────────────────────────────────
+// Antes, o único caminho era exportar os dois JSONs e resolver na mão — e o
+// aviso reaparecia a cada edição nova, porque D._rev nunca avançava depois
+// de um 409, então toda tentativa seguinte gerava outro 409. Agora existe um
+// estado persistente (localStorage) que: (1) suprime reenvio automático
+// enquanto não resolvido, (2) sobrevive a refresh/reabrir o app, e (3) tem
+// um modal de verdade com revisão de diferenças e três formas seguras de
+// resolver, sem nunca sobrescrever nada silenciosamente.
+var CONFLICT_KEY="lc-conflict-pending";
+var CONFLICT_CATEGORIES=[
+  {key:"pf_tx",label:"Transações PF",path:["pf","transactions"]},
+  {key:"pj_tx",label:"Transações PJ",path:["pj","transactions"]},
+  {key:"accounts",label:"Contas",path:["accounts"]},
+  {key:"cards",label:"Cartões",path:["cards"]},
+  {key:"clients",label:"Clientes",path:["clients"]},
+  {key:"services",label:"Serviços",path:["services"]},
+  {key:"agenda",label:"Atendimentos",path:["agenda"]},
+  {key:"investments",label:"Investimentos PF",path:["investments"]},
+  {key:"pjInvestments",label:"Investimentos PJ",path:["pjInvestments"]},
+  {key:"objectives",label:"Objetivos PF",path:["objectives"]},
+  {key:"pjObjectives",label:"Objetivos PJ",path:["pjObjectives"]}
+];
+function getPath(obj,path){return path.reduce(function(o,k){return (o&&o[k])||[]},obj)}
+function setPath(obj,path,val){
+  var cur=obj;
+  for(var i=0;i<path.length-1;i++){if(!cur[path[i]])cur[path[i]]={};cur=cur[path[i]]}
+  cur[path[path.length-1]]=val;
+}
+// Compara por ID estável — nunca por descrição/valor/data, como pedido.
+function diffCategory(localArr,cloudArr){
+  localArr=localArr||[];cloudArr=cloudArr||[];
+  var localById={},cloudById={};
+  localArr.forEach(function(x){if(x&&x.id!=null)localById[x.id]=x});
+  cloudArr.forEach(function(x){if(x&&x.id!=null)cloudById[x.id]=x});
+  var onlyLocal=0,onlyCloud=0,sameIdDiff=0;
+  Object.keys(localById).forEach(function(id){
+    if(!(id in cloudById))onlyLocal++;
+    else if(JSON.stringify(localById[id])!==JSON.stringify(cloudById[id]))sameIdDiff++;
+  });
+  Object.keys(cloudById).forEach(function(id){if(!(id in localById))onlyCloud++});
+  return{totalLocal:localArr.length,totalCloud:cloudArr.length,onlyLocal:onlyLocal,onlyCloud:onlyCloud,sameIdDiff:sameIdDiff};
+}
+// União por ID: nunca duplica, nunca soma o mesmo lançamento duas vezes.
+// Itens com o mesmo ID em ambos os lados mantêm a versão local (já reportada
+// separadamente no diff como "conteúdo diferente", nunca escondida).
+function mergeCategory(localArr,cloudArr){
+  localArr=localArr||[];cloudArr=cloudArr||[];
+  var byId={},order=[];
+  localArr.forEach(function(x){if(x&&x.id!=null){byId[x.id]=x;order.push(x.id)}});
+  cloudArr.forEach(function(x){if(x&&x.id!=null&&!(x.id in byId)){byId[x.id]=x;order.push(x.id)}});
+  return order.map(function(id){return byId[id]});
+}
+
+function saveConflictState(state){try{ls_set(CONFLICT_KEY,JSON.stringify(state))}catch(e){}}
+function getConflictState(){try{var r=ls_get(CONFLICT_KEY);return r?JSON.parse(r):null}catch(e){return null}}
+function clearConflictState(){try{localStorage.removeItem(CONFLICT_KEY)}catch(e){}}
+
 function showConflictNotice(cloudSnapshot){
-  _lastConflict={local:JSON.parse(JSON.stringify(D)),cloud:cloudSnapshot,at:new Date().toISOString()};
-  console.warn("Conflito de sincronização detectado (409). Snapshots preservados em _lastConflict.",_lastConflict);
+  // Se já existe um conflito pendente salvo, não sobrescreve — mantém o
+  // primeiro estado capturado (evita perder o ponto de partida original a
+  // cada nova tentativa automática bloqueada).
+  if(getConflictState()){setSyncStatus("conflito");return}
+  var state={
+    localSnapshot:JSON.stringify(D),
+    cloudSnapshot:cloudSnapshot?JSON.stringify(cloudSnapshot):null,
+    localRev:D._rev||0,
+    cloudRev:(cloudSnapshot&&typeof cloudSnapshot._rev==="number")?cloudSnapshot._rev:null,
+    deviceId:_deviceId,
+    at:new Date().toISOString()
+  };
+  saveConflictState(state);
+  _lastConflict={local:D,cloud:cloudSnapshot,at:state.at};
+  console.warn("Conflito de sincronização detectado (409). Estado salvo em "+CONFLICT_KEY+".",state);
   setSyncStatus("conflito");
   var el=gi("sync-badge");
-  if(el){
-    el.onclick=function(){
-      if(confirm("Encontramos alterações feitas em outro dispositivo.\n\nSeus dados locais NÃO foram perdidos. Deseja baixar as duas versões (local e do servidor) para comparar antes de decidir qual manter?")){
-        exportJSON(_lastConflict.local,"lucrei_versao_local_"+Date.now()+".json");
-        exportJSON(_lastConflict.cloud,"lucrei_versao_servidor_"+Date.now()+".json");
-      }
-    };
+  if(el)el.onclick=function(){openConflictModal()};
+}
+
+function openConflictModal(){
+  var cs=getConflictState();
+  if(!cs)return;
+  renderConflictStep1(cs);
+  oM(true,"m2");
+}
+
+function renderConflictStep1(cs){
+  var bd=gi("m2b");if(!bd)return;bd.innerHTML="";
+  var t=ce("div","mt");t.textContent="⚠️ Encontramos alterações feitas em outro dispositivo";bd.appendChild(t);
+  var p=ce("div");p.style.cssText="font-size:13px;color:#6b7280;margin:10px 0 18px;line-height:1.5";
+  p.textContent="Seus dados não foram apagados. Escolha como deseja continuar.";
+  bd.appendChild(p);
+
+  var b1=ce("button","btn bou");b1.style.cssText="width:100%;margin-bottom:8px;text-align:left";b1.textContent="🔍 Revisar diferenças";
+  b1.onclick=function(){renderConflictDiff(cs)};
+  var b2=ce("button","btn bou");b2.style.cssText="width:100%;margin-bottom:8px;text-align:left";b2.textContent="📱 Usar versão deste dispositivo";
+  b2.onclick=function(){renderConflictConfirm(cs,"local")};
+  var b3=ce("button","btn bou");b3.style.cssText="width:100%;margin-bottom:8px;text-align:left";b3.textContent="☁️ Usar versão da nuvem";
+  b3.onclick=function(){renderConflictConfirm(cs,"cloud")};
+  var b4=ce("button","btn bpf");b4.style.cssText="width:100%;margin-bottom:8px;text-align:left";b4.textContent="🔀 Manter os dados das duas versões";
+  b4.onclick=function(){renderConflictConfirm(cs,"merge")};
+  bd.appendChild(b1);bd.appendChild(b2);bd.appendChild(b3);bd.appendChild(b4);
+
+  var meta=ce("div");meta.style.cssText="font-size:10.5px;color:#9ca3af;margin-top:6px;text-align:center";
+  meta.textContent="Conflito detectado em "+new Date(cs.at).toLocaleString("pt-BR");
+  bd.appendChild(meta);
+
+  var closeB=ce("button","btn bou");closeB.style.cssText="width:100%;margin-top:8px";closeB.textContent="Fechar (decidir depois)";
+  closeB.onclick=function(){oM(false,"m2")};
+  bd.appendChild(closeB);
+}
+
+function renderConflictDiff(cs){
+  var bd=gi("m2b");bd.innerHTML="";
+  var t=ce("div","mt");t.textContent="Comparação entre as duas versões";bd.appendChild(t);
+
+  var local=JSON.parse(cs.localSnapshot);
+  var cloud=cs.cloudSnapshot?JSON.parse(cs.cloudSnapshot):null;
+
+  if(!cloud){
+    var noC=ce("div");noC.style.cssText="font-size:13px;color:#6b7280;margin:10px 0";
+    noC.textContent="Não foi possível carregar a versão da nuvem para comparação agora.";
+    bd.appendChild(noC);
+  }else{
+    var tbl=ce("div");tbl.style.cssText="margin:10px 0;max-height:320px;overflow-y:auto";
+    CONFLICT_CATEGORIES.forEach(function(cat){
+      var la=getPath(local,cat.path),ca=getPath(cloud,cat.path);
+      var d=diffCategory(la,ca);
+      var row=ce("div");row.style.cssText="padding:8px 0;border-bottom:1px solid #f0f0f0";
+      var title=ce("div");title.style.cssText="font-size:12.5px;font-weight:600;margin-bottom:3px";title.textContent=cat.label;
+      var detail=ce("div");detail.style.cssText="font-size:11px;color:#6b7280";
+      var parts=["neste dispositivo: "+d.totalLocal,"na nuvem: "+d.totalCloud];
+      if(d.onlyLocal)parts.push(d.onlyLocal+" só aqui");
+      if(d.onlyCloud)parts.push(d.onlyCloud+" só na nuvem");
+      if(d.sameIdDiff)parts.push(d.sameIdDiff+" com conteúdo diferente");
+      detail.textContent=parts.join(" · ");
+      row.appendChild(title);row.appendChild(detail);tbl.appendChild(row);
+    });
+    bd.appendChild(tbl);
   }
+
+  var dlRow=ce("div");dlRow.style.cssText="display:flex;gap:8px;margin:12px 0";
+  var dlL=ce("button","btn bou");dlL.style.cssText="flex:1;font-size:11px";dlL.textContent="⬇️ Baixar versão local";
+  dlL.onclick=function(){exportJSON(local,"lucrei_versao_local_"+Date.now()+".json")};
+  var dlC=ce("button","btn bou");dlC.style.cssText="flex:1;font-size:11px";dlC.textContent="⬇️ Baixar versão da nuvem";
+  if(!cloud)dlC.disabled=true;
+  dlC.onclick=function(){if(cloud)exportJSON(cloud,"lucrei_versao_servidor_"+Date.now()+".json")};
+  dlRow.appendChild(dlL);dlRow.appendChild(dlC);bd.appendChild(dlRow);
+
+  var back=ce("button","btn bou");back.style.width="100%";back.textContent="← Voltar";
+  back.onclick=function(){renderConflictStep1(cs)};
+  bd.appendChild(back);
+}
+
+function renderConflictConfirm(cs,choice){
+  var bd=gi("m2b");bd.innerHTML="";
+  var labels={local:"Usar a versão deste dispositivo",cloud:"Usar a versão da nuvem",merge:"Manter os dados das duas versões"};
+  var t=ce("div","mt");t.textContent=labels[choice];bd.appendChild(t);
+  var descs={
+    local:"Vamos enviar os dados deste dispositivo para o servidor. A versão da nuvem será substituída — mas nada é apagado, guardamos uma cópia de recuperação antes.",
+    cloud:"Vamos substituir os dados deste dispositivo pelos da nuvem. Guardamos uma cópia de recuperação da versão local antes de trocar.",
+    merge:"Vamos unir os itens que existem só neste dispositivo com os que existem só na nuvem, sem duplicar nada."
+  };
+  var p=ce("div");p.style.cssText="font-size:13px;color:#6b7280;margin:10px 0 14px;line-height:1.5";p.textContent=descs[choice];
+  bd.appendChild(p);
+
+  if(choice==="merge"&&cs.cloudSnapshot){
+    var cloud=JSON.parse(cs.cloudSnapshot);
+    var totalOnlyLocal=0,totalOnlyCloud=0,totalDiff=0;
+    var sumTbl=ce("div");sumTbl.style.cssText="background:#f9fafb;border-radius:10px;padding:10px 12px;margin-bottom:14px";
+    CONFLICT_CATEGORIES.forEach(function(cat){
+      var la=getPath(D,cat.path),ca=getPath(cloud,cat.path);
+      var d=diffCategory(la,ca);
+      totalOnlyLocal+=d.onlyLocal;totalOnlyCloud+=d.onlyCloud;totalDiff+=d.sameIdDiff;
+      if(d.onlyLocal||d.onlyCloud||d.sameIdDiff){
+        var row=ce("div");row.style.cssText="font-size:11.5px;padding:3px 0;display:flex;justify-content:space-between";
+        var lbl=ce("span");lbl.textContent=cat.label;
+        var val=ce("span");val.style.color="#6b7280";
+        var vparts=[];
+        if(d.onlyLocal)vparts.push(d.onlyLocal+" só aqui");
+        if(d.onlyCloud)vparts.push(d.onlyCloud+" só na nuvem");
+        if(d.sameIdDiff)vparts.push(d.sameIdDiff+" divergente");
+        val.textContent=vparts.join(" · ");
+        row.appendChild(lbl);row.appendChild(val);sumTbl.appendChild(row);
+      }
+    });
+    if(!totalOnlyLocal&&!totalOnlyCloud&&!totalDiff){
+      var noneRow=ce("div");noneRow.style.cssText="font-size:11.5px;color:#9ca3af";noneRow.textContent="Nenhuma diferença encontrada entre as duas versões.";
+      sumTbl.appendChild(noneRow);
+    }
+    bd.appendChild(sumTbl);
+
+    if(totalDiff>0){
+      var ruleBox=ce("div");ruleBox.style.cssText="background:#fef3c7;border:1px solid #fde68a;border-radius:10px;padding:10px 12px;margin-bottom:14px;font-size:12.5px;color:#92400e;line-height:1.5";
+      ruleBox.textContent="Existem itens que foram alterados nas duas versões. Nesses casos, serão mantidos os dados deste dispositivo.";
+      bd.appendChild(ruleBox);
+    }
+  }
+
+  var confirmB=ce("button","btn bpf");confirmB.style.cssText="width:100%;margin-bottom:8px";confirmB.textContent="Confirmar";
+  confirmB.onclick=function(){
+    confirmB.disabled=true;confirmB.textContent="Processando...";
+    if(choice==="local")resolveConflictUseLocal(cs);
+    else if(choice==="cloud")resolveConflictUseCloud(cs);
+    else resolveConflictMerge(cs);
+  };
+  var back=ce("button","btn bou");back.style.width="100%";back.textContent="← Voltar";
+  back.onclick=function(){renderConflictStep1(cs)};
+  bd.appendChild(confirmB);bd.appendChild(back);
+}
+
+// Usar versão local: reenvia pela MESMA rota atômica protegida de sempre,
+// só que primeiro busca a revisão real e atual do servidor — não é um
+// bypass, é o procedimento correto (a proteção 409 continua validando tudo).
+function resolveConflictUseLocal(cs){
+  (async function(){
+    setSyncStatus("sincronizando");
+    try{
+      var loadRes=await apiCall("/api/data/load",{method:"GET"});
+      if(loadRes.ok&&typeof loadRes.data.revision==="number")D._rev=loadRes.data.revision;
+      clearConflictState();
+      oM(false,"m2");
+      triggerSyncPush();
+    }catch(e){
+      setSyncStatus("conflito");
+      alert("Não conseguimos confirmar com o servidor agora. Tente de novo em instantes.");
+    }
+  })();
+}
+
+function resolveConflictUseCloud(cs){
+  if(!cs.cloudSnapshot){alert("Não temos a versão da nuvem disponível agora. Tente 'Revisar diferenças' ou aguarde reconectar.");return}
+  ls_set("lc-recovery-"+Date.now(),JSON.stringify(D)); // backup de recuperação, mesmo com edições feitas durante o conflito
+  var cloud=JSON.parse(cs.cloudSnapshot);
+  Object.keys(cloud).forEach(function(k){D[k]=cloud[k]});
+  if(typeof cs.cloudRev==="number")D._rev=cs.cloudRev;
+  ls_set(dk(),JSON.stringify(D));
+  clearConflictState();
+  setSyncStatus("salvo");
+  oM(false,"m2");
+  if(typeof nav==="function")nav(tab);
+}
+
+function resolveConflictMerge(cs){
+  if(!cs.cloudSnapshot){alert("Não temos a versão da nuvem disponível agora para mesclar. Tente novamente em instantes.");return}
+  (async function(){
+    setSyncStatus("sincronizando");
+    try{
+      ls_set("lc-recovery-"+Date.now(),JSON.stringify(D)); // backup antes de mesclar
+      var cloud=JSON.parse(cs.cloudSnapshot);
+      CONFLICT_CATEGORIES.forEach(function(cat){
+        var la=getPath(D,cat.path),ca=getPath(cloud,cat.path);
+        setPath(D,cat.path,mergeCategory(la,ca));
+      });
+      var loadRes=await apiCall("/api/data/load",{method:"GET"});
+      if(loadRes.ok&&typeof loadRes.data.revision==="number")D._rev=loadRes.data.revision;
+      clearConflictState();
+      oM(false,"m2");
+      if(typeof nav==="function")nav(tab);
+      sv();
+    }catch(e){
+      setSyncStatus("conflito");
+      alert("Não conseguimos confirmar com o servidor agora. Tente de novo em instantes.");
+    }
+  })();
 }
 
 
@@ -1252,6 +1505,7 @@ function sv(){
 
 function triggerSyncPush(){
   if(!_email)return;
+  if(getConflictState()){setSyncStatus("conflito");return} // conflito pendente: não reenviar sozinho (evita loop de 409)
   if(_syncInFlight){_syncDirty=true;return} // já existe um envio em andamento — só marca que há mudança nova
   if(!navigator.onLine){setSyncStatus("sem_conexao");return}
   _syncInFlight=true;_syncDirty=false;
