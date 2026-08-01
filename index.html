@@ -232,7 +232,14 @@ button,input,select,textarea{font-family:inherit;font-size:14px}
 @keyframes slideUp{from{transform:translateY(14px);opacity:0}to{transform:translateY(0);opacity:1}}
 .su{animation:slideUp .2s ease}
 
-#sync-badge{display:none;position:fixed;top:calc(var(--tb-h) + 6px);right:10px;z-index:200;align-items:center;padding:5px 10px;border-radius:14px;border:1px solid;font-size:10.5px;font-weight:600;box-shadow:0 4px 12px rgba(0,0,0,.1);max-width:min(260px,70vw);white-space:normal;line-height:1.3;background:#fff;transition:opacity .2s}
+#sync-badge{display:none;position:fixed;z-index:200;width:34px;height:34px;border-radius:50%;align-items:center;justify-content:center;font-size:15px;border:1px solid;box-shadow:0 3px 12px rgba(0,0,0,.12);background:#fff;transition:opacity .2s}
+@media(max-width:768px){
+  /* Ao lado da Luna, não em cima dela nem do +Lançar — só aparece quando há algo pra decidir */
+  #sync-badge{bottom:calc(var(--bn-h) + env(safe-area-inset-bottom) + 10px);right:62px}
+}
+@media(min-width:769px){
+  #sync-badge{top:calc(var(--tb-h) + 10px);right:16px}
+}
 #add-fab{
   display:none;
   position:fixed;
@@ -1516,44 +1523,116 @@ function resolveConflictMerge(cs){
 // nuvem na próxima comparação — e syncFromCloud() descartava os dados
 // corretos do servidor achando que os dados locais (errados) eram mais novos.
 var _syncStatus="salvo"; // 'salvo'|'salvando'|'nao_sincronizado'|'sem_conexao'|'sincronizando'
+// rastreio interno mantido — a exibição visual agora é decidida separadamente, em
+// renderSyncBadge(), pelo princípio "só chama atenção quando há decisão real".
 var _syncInFlight=false;
 var _syncDirty=false;
 var _syncRetryTimer=null;
-var _syncRetryDelay=2000;
+var RETRY_DELAYS=[2000,4000,8000,16000,30000,60000]; // sequência exata pedida; depois, no máx. 1x/min
+var _retryIndex=0;
+var _hasPendingChanges=false; // existe alteração local ainda não confirmada pelo servidor
+var _pendingSince=null;       // quando essa pendência começou (pra saber se "prolongou")
+var _offlineProlonged=false;  // offline há mais de 30s com pendência
+var _offlineTimer=null;
+var _debounceTimer=null;
+var DEBOUNCE_MS=4000;         // agrupa alterações rápidas — 3 a 5s pedido
+var SAFETY_INTERVAL_MS=60000;
+var OFFLINE_PROLONGED_MS=30000;
+var PENDING_PROLONGED_MS=120000; // "por mais de alguns minutos"
+
+function isPendingProlonged(){
+  return _hasPendingChanges&&_pendingSince&&(Date.now()-_pendingSince>PENDING_PROLONGED_MS);
+}
 
 function setSyncStatus(s){_syncStatus=s;renderSyncBadge()}
 
 function renderSyncBadge(){
   var el=gi("sync-badge");if(!el)return;
+  // Princípio central: se o sistema resolve sozinho, fica em silêncio. Só aparece
+  // quando existe uma decisão real que a usuária precisa tomar (conflito) ou uma
+  // espera que já passou do razoável (offline/pendência prolongada) — nunca para
+  // "Salvando...", "Sincronizando..." ou operação normal, mesmo que _syncStatus
+  // interno passe por esses estados (continuam rastreados, só não aparecem).
+  var mode=null;
+  if(getConflictState())mode="conflito";
+  else if(_offlineProlonged&&_hasPendingChanges)mode="offline_prolongado";
+  else if(isPendingProlonged())mode="pendencia_prolongada";
+
+  if(!mode){el.style.display="none";el.onclick=null;el.title="";return}
+
   var cfg={
-    salvo:        {show:true, txt:"✓ Salvo",            bg:"#f0fdf4", col:"#059669", bd:"#bbf7d0"},
-    salvando:     {show:true, txt:"Salvando...",         bg:"#f9fafb", col:"#6b7280", bd:"#e5e7eb"},
-    sincronizando:{show:true, txt:"Sincronizando...",    bg:"#f9fafb", col:"#6b7280", bd:"#e5e7eb"},
-    nao_sincronizado:{show:true, txt:"⚠️ Não sincronizado", bg:"#fef2f2", col:"#dc2626", bd:"#fecaca"},
-    sem_conexao:  {show:true, txt:"📡 Sem conexão — suas alterações serão enviadas quando a conexão voltar", bg:"#fff7ed", col:"#c2410c", bd:"#fed7aa"},
-    conflito:     {show:true, txt:"⚠️ Encontramos alterações em outro dispositivo — toque para ver", bg:"#fef2f2", col:"#dc2626", bd:"#fecaca"}
-  }[_syncStatus]||{show:false};
-  if(!cfg.show){el.style.display="none";return}
+    conflito:            {icon:"⚠️", bg:"#fff7ed", col:"#c2410c", bd:"#fed7aa", title:"Precisamos confirmar seus dados — toque para revisar"},
+    offline_prolongado:  {icon:"📡", bg:"#f9fafb", col:"#6b7280", bd:"#e5e7eb", title:"Seus dados estão seguros neste aparelho"},
+    pendencia_prolongada:{icon:"☁️", bg:"#f9fafb", col:"#6b7280", bd:"#e5e7eb", title:"Algumas atualizações ainda estão sendo concluídas"}
+  }[mode];
+
   el.style.display="flex";
-  el.style.background=cfg.bg;el.style.color=cfg.col;el.style.borderColor=cfg.bd;
-  el.style.cursor=_syncStatus==="conflito"?"pointer":"default";
-  el.textContent=cfg.txt;
-  // O clique precisa ser religado toda vez que o badge mostra "conflito" — não só
-  // quando showConflictNotice() acabou de rodar (409 novo). Ao recarregar a página
-  // com um lc-conflict-pending já existente, o status é restaurado direto por
-  // setSyncStatus()/renderSyncBadge(), sem passar por showConflictNotice() de novo,
-  // e o onclick nunca era reatribuído nesse caminho — o badge aparecia mas o
-  // clique não fazia nada. Aqui cobre os dois casos, sempre.
-  if(_syncStatus==="conflito")el.onclick=function(){openConflictModal()};
-  else el.onclick=null;
+  el.style.background=cfg.bg;el.style.borderColor=cfg.bd;el.style.color=cfg.col;
+  el.style.cursor="pointer";
+  el.textContent=cfg.icon;
+  el.title=cfg.title;
+  el.setAttribute("aria-label",cfg.title);
+  el.onclick=function(){onSyncIndicatorTap(mode)};
+}
+
+function onSyncIndicatorTap(mode){
+  if(mode==="conflito"){openConflictModal();return} // fluxo de resolução já existente, intacto
+  if(mode==="offline_prolongado"){
+    showSyncPopup("Seus lançamentos estão seguros neste aparelho. Assim que a internet voltar, o Lucrei atualiza tudo automaticamente.",false);
+    return;
+  }
+  if(mode==="pendencia_prolongada"){
+    showSyncPopup("Algumas atualizações ainda estão sendo concluídas. Seus dados continuam seguros neste aparelho.",true);
+  }
+}
+
+// Popup leve e calmo (não é alert()/confirm() nativo — tom mais tranquilo,
+// consistente com o resto do app), usado só pelas duas mensagens discretas
+// acima. O fluxo de conflito continua usando o modal completo já existente.
+function showSyncPopup(text,showRefreshBtn){
+  var old=gi("sync-popup");if(old)old.remove();
+  var badge=gi("sync-badge");
+  var r=badge?badge.getBoundingClientRect():{top:60,bottom:60,right:window.innerWidth-12};
+  var pop=ce("div");pop.id="sync-popup";
+  pop.style.cssText="position:fixed;z-index:250;background:#1f2937;color:#f9fafb;font-size:12.5px;line-height:1.5;padding:14px 16px;border-radius:12px;max-width:250px;box-shadow:0 8px 30px rgba(0,0,0,.25);top:"+(r.bottom+8)+"px;right:"+(window.innerWidth-r.right)+"px";
+  var txt=ce("div");txt.textContent=text;pop.appendChild(txt);
+  if(showRefreshBtn){
+    var btn=ce("button");btn.textContent="Atualizar agora";
+    btn.style.cssText="margin-top:10px;background:#fff;color:#1f2937;border:none;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;cursor:pointer;width:100%";
+    btn.onclick=function(){
+      pop.remove();
+      _retryIndex=0;
+      if(_syncRetryTimer){clearTimeout(_syncRetryTimer);_syncRetryTimer=null}
+      triggerSyncPush(); // mesma rota de sempre — se der 409 real, o fluxo de conflito assume normalmente
+    };
+    pop.appendChild(btn);
+  }
+  document.body.appendChild(pop);
+  setTimeout(function(){
+    var closer=function(ev){
+      if(!pop.contains(ev.target)){pop.remove();document.removeEventListener("click",closer)}
+    };
+    document.addEventListener("click",closer);
+  },50);
 }
 
 function sv(){
   if(!_email)return;
   ls_set(dk(),JSON.stringify(D)); // cache local imediato — isto NÃO é confirmação de sincronização
   _syncDirty=true;
-  if(!navigator.onLine){setSyncStatus("sem_conexao");return}
-  triggerSyncPush();
+  _hasPendingChanges=true;
+  if(_pendingSince===null)_pendingSince=Date.now();
+  if(!navigator.onLine){setSyncStatus("sem_conexao");return} // fica em silêncio — o timer de 30s decide se algo aparece
+  scheduleDebouncedPush();
+}
+function scheduleDebouncedPush(){
+  // Agrupa várias alterações rápidas (3 a 5s) num único envio, em vez de uma
+  // requisição por tecla/clique. Sempre envia o estado mais atual quando dispara.
+  if(_debounceTimer)clearTimeout(_debounceTimer);
+  _debounceTimer=setTimeout(function(){
+    _debounceTimer=null;
+    triggerSyncPush();
+  },DEBOUNCE_MS);
 }
 
 function triggerSyncPush(bypassConflictGuard){
@@ -1588,9 +1667,10 @@ function triggerSyncPush(bypassConflictGuard){
       D._syncedAt=new Date().toISOString(); // só agora — confirmado pelo servidor
       if(newRev!==null)D._rev=newRev;
       ls_set(dk(),JSON.stringify(D));
-      _syncRetryDelay=2000;
+      _retryIndex=0;
       broadcastDataChanged();
       if(_syncDirty){return triggerSyncPush()} // mudou algo durante o envio — reenviar o estado mais atual, encadeando a promise
+      _hasPendingChanges=false;_pendingSince=null;_offlineProlonged=false;
       setSyncStatus("salvo");
       return{ok:true,revision:D._rev};
     }else if(conflict){
@@ -1610,18 +1690,39 @@ function triggerSyncPush(bypassConflictGuard){
 }
 function scheduleSyncRetry(){
   if(_syncRetryTimer)return;
+  var delay=RETRY_DELAYS[Math.min(_retryIndex,RETRY_DELAYS.length-1)];
   _syncRetryTimer=setTimeout(function(){
     _syncRetryTimer=null;
     if(navigator.onLine&&_email)triggerSyncPush();
-  },_syncRetryDelay);
-  _syncRetryDelay=Math.min(_syncRetryDelay*2,60000); // backoff exponencial, teto de 60s
+  },delay);
+  if(_retryIndex<RETRY_DELAYS.length-1)_retryIndex++; // depois do teto (60s), continua repetindo no máx. 1x/min
 }
 window.addEventListener("online",function(){
+  if(_offlineTimer){clearTimeout(_offlineTimer);_offlineTimer=null}
+  _offlineProlonged=false;
+  renderSyncBadge();
   if(!_email)return;
   if(_syncRetryTimer){clearTimeout(_syncRetryTimer);_syncRetryTimer=null}
+  _retryIndex=0;
   syncFromCloud(); // pull + reconciliar + push — não só reenviar local, a nuvem pode ter mudado enquanto offline
 });
-window.addEventListener("offline",function(){setSyncStatus("sem_conexao")});
+window.addEventListener("offline",function(){
+  setSyncStatus("sem_conexao"); // rastreio interno — fica em silêncio até prolongar (30s)
+  if(_offlineTimer)clearTimeout(_offlineTimer);
+  _offlineTimer=setTimeout(function(){
+    if(!navigator.onLine&&_hasPendingChanges){_offlineProlonged=true;renderSyncBadge()}
+  },OFFLINE_PROLONGED_MS);
+});
+
+// Timer de segurança: só age se houver alteração pendente — nunca manda
+// requisição à toa quando já está tudo salvo. Também reavalia o indicador
+// periodicamente, pra "pendência prolongada" aparecer mesmo sem nova digitação.
+setInterval(function(){
+  renderSyncBadge();
+  if(_email&&_hasPendingChanges&&navigator.onLine&&!_syncInFlight&&!getConflictState()){
+    triggerSyncPush();
+  }
+},SAFETY_INTERVAL_MS);
 
 // Session (30 days)
 var SES_MS=30*24*60*60*1000;
