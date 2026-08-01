@@ -1900,7 +1900,7 @@ async function authGo(){
       }else if(apiResReg.status===409){
         showErr("E-mail já cadastrado. Faça login.");return;
       }else if(apiResReg.status===400){
-        showErr(apiResReg.data.error||"Verifique os dados informados.");return;
+        showErr(apiResReg.data.message||apiResReg.data.error||"Verifique os dados informados.");return;
       }
       // Erro de rede/servidor — cai no fallback Supabase abaixo
       console.warn("Railway register indisponível, usando fallback Supabase direto");
@@ -1924,19 +1924,14 @@ async function authGo(){
         ls_set("lc-api-email", em);
         var usr2 = apiRes.data.user;
         ldUser(em);D.userName=usr2.name;D.userEmail=usr2.email||em;D.perfil=usr2.perfil||"autonoma";
-        var subStatus2=usr2.subscriptionStatus||null;
-        if(subStatus2==="canceled"||subStatus2==="suspended"||subStatus2==="inactive"){
-          showErr("Sua assinatura está inativa. Entre em contato: (67) 99117-4813");return;
-        }
-        if(subStatus2==="pending"){
-          showErr("Acesso não encontrado. Para acessar o Lucrei, assine um plano em: rafaelaladvig.github.io/paginadevendas");return;
-        }
         saveSession(em);sv();boot();
         syncFromCloud();
         return;
       }else if(apiRes.status===401||apiRes.status===404||apiRes.status===403){
-        // Railway respondeu mas credenciais inválidas/bloqueadas — não cair no fallback
-        showErr(apiRes.data.error||"Não foi possível entrar.");return;
+        // Railway respondeu mas credenciais inválidas/bloqueadas — não cair no fallback.
+        // Preferir a mensagem amigável do backend (data.message) — o código técnico
+        // (data.error, ex: "payment_pending") é só pra log/depuração, nunca pra tela.
+        showErr(apiRes.data.message||apiRes.data.error||"Não foi possível entrar.");return;
       }
       // Se chegou aqui: erro de rede/servidor (status 0 ou 5xx) — cai no fallback Supabase abaixo
       console.warn("Railway login indisponível, usando fallback Supabase direto");
