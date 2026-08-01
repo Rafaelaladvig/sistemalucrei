@@ -1887,6 +1887,13 @@ async function authGo(){
         ls_set("lc-api-token", apiResReg.data.token);
         ls_set("lc-api-email", em);
         var u2=getUsers();u2[em]={name:nm,pw:"(gerenciado pelo servidor)",perfil:selPerf,phone:ph,email:em};saveUsers(u2);
+        // O backend manda ok:true mesmo pra conta pending (authorized:false) — o token
+        // fica salvo (a pessoa consegue voltar e logar depois de pagar), mas o painel
+        // NUNCA pode abrir sem autorização explícita. Antes esse campo nunca era lido.
+        if(apiResReg.data.authorized===false){
+          showErr(apiResReg.data.message||"Seu cadastro foi criado. Assim que o pagamento for confirmado, seu acesso será liberado.");
+          return;
+        }
         ldUser(em);D.userName=nm;D.userEmail=em;D.perfil=selPerf;
         saveSession(em);sv();boot();
         return;
@@ -1899,18 +1906,12 @@ async function authGo(){
       console.warn("Railway register indisponível, usando fallback Supabase direto");
     }
 
-    // ── Fallback: Supabase direto (comportamento original) ──
-    var u=getUsers();if(u[em]){showErr("E-mail já cadastrado. Faça login.");return}
-    var pwHash=await hashPw(pw);
-    u[em]={name:nm,pw:pwHash,perfil:selPerf,phone:ph,email:em};saveUsers(u);
-    if(_cloudEnabled){
-      var okCloud=await saveUserCloud(em,nm,pwHash,selPerf,ph);
-      if(!okCloud){
-        console.warn("Cloud save failed — continuing with local data");
-      }
-    }
-    ldUser(em);D.userName=nm;D.userEmail=em;D.perfil=selPerf;
-    saveSession(em);sv();boot()
+    // ── Sem conexão com o Railway: não há como verificar cupom/pagamento ──
+    // Antes, esse caminho abria o painel completo sem checar nada — porque
+    // literalmente não tem como checar sem o backend. Falha fechada: nunca
+    // libera acesso aqui, só avisa e preserva o que foi digitado.
+    showErr("Não conseguimos conectar ao servidor agora. Verifique sua internet e tente novamente em instantes.");
+    return;
   }else{
     if(!em||!pw){showErr("Preencha e-mail e senha.");return}
 
