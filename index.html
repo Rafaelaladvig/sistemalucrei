@@ -1255,10 +1255,6 @@ function getConflictState(){try{var r=ls_get(CONFLICT_KEY);return r?JSON.parse(r
 function clearConflictState(){try{localStorage.removeItem(CONFLICT_KEY)}catch(e){}}
 
 function showConflictNotice(cloudSnapshot){
-  // Se já existe um conflito pendente salvo, não sobrescreve — mantém o
-  // primeiro estado capturado (evita perder o ponto de partida original a
-  // cada nova tentativa automática bloqueada).
-  if(getConflictState()){setSyncStatus("conflito");return}
   var state={
     localSnapshot:JSON.stringify(D),
     cloudSnapshot:cloudSnapshot?JSON.stringify(cloudSnapshot):null,
@@ -1415,10 +1411,32 @@ function resolveConflictUseLocal(cs){
     setSyncStatus("sincronizando");
     try{
       var loadRes=await apiCall("/api/data/load",{method:"GET"});
-      if(loadRes.ok&&typeof loadRes.data.revision==="number")D._rev=loadRes.data.revision;
-      clearConflictState();
-      oM(false,"m2");
-      triggerSyncPush();
+      if(!loadRes.ok){
+        setSyncStatus("conflito");
+        alert("Não conseguimos confirmar com o servidor agora. Tente de novo em instantes.");
+        return;
+      }
+      if(typeof loadRes.data.revision==="number")D._rev=loadRes.data.revision;
+      // bypassa a guarda de conflito pendente (2º argumento) — esta É a tentativa
+      // explícita de resolução, confirmada pela usuária no modal.
+      var result=await triggerSyncPush(true);
+      if(result.ok){
+        // D._rev/D._syncedAt já foram atualizados dentro do próprio triggerSyncPush() no sucesso.
+        clearConflictState();
+        oM(false,"m2");
+      }else if(result.conflict){
+        // Uma NOVA alteração chegou na nuvem entre a leitura da revisão e o envio.
+        // triggerSyncPush() já chamou showConflictNotice() internamente, atualizando
+        // o estado salvo com o snapshot mais recente — o conflito continua pendente,
+        // nada foi perdido, nada foi sobrescrito.
+        setSyncStatus("conflito");
+        alert("Encontramos uma nova alteração em outro dispositivo enquanto isso era resolvido. Revise as diferenças novamente antes de confirmar.");
+        var refreshed=getConflictState();
+        if(refreshed)renderConflictStep1(refreshed);
+      }else{
+        setSyncStatus("conflito");
+        alert("Não conseguimos confirmar com o servidor agora. Tente de novo em instantes.");
+      }
     }catch(e){
       setSyncStatus("conflito");
       alert("Não conseguimos confirmar com o servidor agora. Tente de novo em instantes.");
@@ -1428,6 +1446,10 @@ function resolveConflictUseLocal(cs){
 
 function resolveConflictUseCloud(cs){
   if(!cs.cloudSnapshot){alert("Não temos a versão da nuvem disponível agora. Tente 'Revisar diferenças' ou aguarde reconectar.");return}
+  // "Usar nuvem" não envia nada ao servidor — só adota o que já está lá — então
+  // não existe HTTP a esperar aqui. O backup local roda antes de qualquer
+  // substituição, e clearConflictState() só depois de D já estar salvo com
+  // sucesso no localStorage.
   ls_set("lc-recovery-"+Date.now(),JSON.stringify(D)); // backup de recuperação, mesmo com edições feitas durante o conflito
   var cloud=JSON.parse(cs.cloudSnapshot);
   Object.keys(cloud).forEach(function(k){D[k]=cloud[k]});
@@ -1444,18 +1466,43 @@ function resolveConflictMerge(cs){
   (async function(){
     setSyncStatus("sincronizando");
     try{
-      ls_set("lc-recovery-"+Date.now(),JSON.stringify(D)); // backup antes de mesclar
+      ls_set("lc-recovery-"+Date.now(),JSON.stringify(D)); // backup do estado local, preservado independente do resultado
       var cloud=JSON.parse(cs.cloudSnapshot);
+      ls_set("lc-recovery-cloud-"+Date.now(),JSON.stringify(cloud)); // backup da versão da nuvem usada na mesclagem
+
+      // Monta o snapshot mesclado numa cópia — só vira D de verdade se a
+      // mesclagem for confirmada pelo servidor.
+      var mergedD=JSON.parse(JSON.stringify(D));
       CONFLICT_CATEGORIES.forEach(function(cat){
         var la=getPath(D,cat.path),ca=getPath(cloud,cat.path);
-        setPath(D,cat.path,mergeCategory(la,ca));
+        setPath(mergedD,cat.path,mergeCategory(la,ca));
       });
+
       var loadRes=await apiCall("/api/data/load",{method:"GET"});
-      if(loadRes.ok&&typeof loadRes.data.revision==="number")D._rev=loadRes.data.revision;
-      clearConflictState();
-      oM(false,"m2");
-      if(typeof nav==="function")nav(tab);
-      sv();
+      if(!loadRes.ok){
+        setSyncStatus("conflito");
+        alert("Não conseguimos confirmar com o servidor agora. Tente de novo em instantes.");
+        return;
+      }
+      mergedD._rev=typeof loadRes.data.revision==="number"?loadRes.data.revision:(D._rev||0);
+
+      D=mergedD; // assume o snapshot mesclado como D corrente — preservado localmente já,
+      ls_set(dk(),JSON.stringify(D)); // independente do resultado do envio abaixo
+
+      var result=await triggerSyncPush(true); // bypassa a guarda — resolução explícita confirmada
+      if(result.ok){
+        clearConflictState();
+        oM(false,"m2");
+        if(typeof nav==="function")nav(tab);
+      }else if(result.conflict){
+        setSyncStatus("conflito");
+        alert("Encontramos uma nova alteração em outro dispositivo enquanto isso era mesclado. Revise as diferenças novamente antes de confirmar.");
+        var refreshed=getConflictState();
+        if(refreshed)renderConflictStep1(refreshed);
+      }else{
+        setSyncStatus("conflito");
+        alert("Não conseguimos confirmar com o servidor agora. Tente de novo em instantes.");
+      }
     }catch(e){
       setSyncStatus("conflito");
       alert("Não conseguimos confirmar com o servidor agora. Tente de novo em instantes.");
@@ -1503,17 +1550,17 @@ function sv(){
   triggerSyncPush();
 }
 
-function triggerSyncPush(){
-  if(!_email)return;
-  if(getConflictState()){setSyncStatus("conflito");return} // conflito pendente: não reenviar sozinho (evita loop de 409)
-  if(_syncInFlight){_syncDirty=true;return} // já existe um envio em andamento — só marca que há mudança nova
-  if(!navigator.onLine){setSyncStatus("sem_conexao");return}
+function triggerSyncPush(bypassConflictGuard){
+  if(!_email)return Promise.resolve({ok:false,error:"no_email"});
+  if(!bypassConflictGuard&&getConflictState()){setSyncStatus("conflito");return Promise.resolve({ok:false,conflict:true})} // conflito pendente: não reenviar sozinho (evita loop de 409) — bypassado só pela resolução explícita do próprio conflito
+  if(_syncInFlight){_syncDirty=true;return Promise.resolve({ok:false,pending:true})} // já existe um envio em andamento — só marca que há mudança nova
+  if(!navigator.onLine){setSyncStatus("sem_conexao");return Promise.resolve({ok:false,offline:true})}
   _syncInFlight=true;_syncDirty=false;
   setSyncStatus("salvando");
   var snapshot=JSON.stringify(D); // captura o estado exato no momento do envio
   var baseRevision=D._rev||0;
-  (async function(){
-    var ok=false,conflict=false,newRev=null;
+  return (async function(){
+    var ok=false,conflict=false,newRev=null,currentRevision=null,errMsg=null;
     try{
       if(MIGRATION_FLAGS.data){
         // baseRevision/deviceId: contrato pronto para quando o backend validar revisão
@@ -1521,14 +1568,15 @@ function triggerSyncPush(){
         // campos sem quebrar nada — são extras no corpo da requisição.
         var res=await apiCall("/api/data/save",{method:"POST",body:{data:JSON.parse(snapshot),baseRevision:baseRevision,deviceId:_deviceId}});
         if(res.ok){ok=true;if(res.data&&typeof res.data.revision==="number")newRev=res.data.revision}
-        else if(res.status===409){conflict=true}
+        else if(res.status===409){conflict=true;currentRevision=res.data&&res.data.currentRevision}
         else if(_cloudEnabled)ok=await sbUpsert("lucrei_data",{email:_email,data:JSON.parse(snapshot),updated_at:new Date().toISOString()});
+        else errMsg="save_failed_"+res.status;
       }else if(_cloudEnabled){
         ok=await sbUpsert("lucrei_data",{email:_email,data:JSON.parse(snapshot),updated_at:new Date().toISOString()});
       }else{
         ok=true; // sem backend configurado nesta etapa — considerar confirmado localmente
       }
-    }catch(e){ok=false}
+    }catch(e){ok=false;errMsg=e.message}
     _syncInFlight=false;
     if(ok){
       D._syncedAt=new Date().toISOString(); // só agora — confirmado pelo servidor
@@ -1536,8 +1584,9 @@ function triggerSyncPush(){
       ls_set(dk(),JSON.stringify(D));
       _syncRetryDelay=2000;
       broadcastDataChanged();
-      if(_syncDirty){triggerSyncPush()} // mudou algo durante o envio — reenviar o estado mais atual
-      else setSyncStatus("salvo");
+      if(_syncDirty){return triggerSyncPush()} // mudou algo durante o envio — reenviar o estado mais atual, encadeando a promise
+      setSyncStatus("salvo");
+      return{ok:true,revision:D._rev};
     }else if(conflict){
       // 409: NÃO sobrescrever nada localmente. Buscar a versão do servidor só para
       // preservar/exportar, sem descartar a versão local pendente.
@@ -1545,9 +1594,11 @@ function triggerSyncPush(){
         var loadRes=await apiCall("/api/data/load",{method:"GET"});
         showConflictNotice(loadRes.ok&&loadRes.data.data?loadRes.data.data:null);
       }catch(e){showConflictNotice(null)}
+      return{ok:false,conflict:true,currentRevision:currentRevision};
     }else{
       setSyncStatus("nao_sincronizado");
       scheduleSyncRetry();
+      return{ok:false,error:errMsg||"unknown"};
     }
   })();
 }
