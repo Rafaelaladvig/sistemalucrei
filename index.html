@@ -8355,6 +8355,13 @@ function oBaixa(id){
   accWrap.style.display=defaultNeedsAccImm?"block":"none";
   if(maqWrap)maqWrap.style.display=defaultNeedsMaqImm?"block":"none";
 
+  // Descrição do atendimento — vira o histórico visível na ficha da cliente
+  var notasLbl=ce("label","lbl");notasLbl.style.cssText="display:block;margin-bottom:4px";notasLbl.textContent="Descrição do atendimento (opcional)";bd.appendChild(notasLbl);
+  var notasInp=ce("textarea","inp");notasInp.id="bx-notas";notasInp.rows=3;
+  notasInp.placeholder="Ex: Tintura loiro 7.0 + matizador violeta, escova progressiva...";
+  notasInp.style.cssText="width:100%;box-sizing:border-box;resize:vertical;margin-bottom:12px;font-family:inherit";
+  bd.appendChild(notasInp);
+
   // Buttons
   var btnRow=ce("div","brow");
   var canBtn=ce("button","btn bou");canBtn.textContent="Cancelar";canBtn.onclick=function(){oM(false,"m1")};
@@ -8561,8 +8568,53 @@ function svBaixa(id){
       return Object.assign({},cl,{visits:visits,lastVisit:lastVisit,visitDates:visitDates,avgInterval:avgInterval,ltv:ltv})
     })
   }
-  D.agenda=(D.agenda||[]).map(function(a){return String(a.id)===String(id)?Object.assign({},a,{status:"concluido",completedAt:endDate,completedTime:endTime,durationMin:durationMin}):a});
+  var notasVal=gi("bx-notas")?gi("bx-notas").value.trim():"";
+  D.agenda=(D.agenda||[]).map(function(a){return String(a.id)===String(id)?Object.assign({},a,{status:"concluido",completedAt:endDate,completedTime:endTime,durationMin:durationMin,notas:notasVal}):a});
   sv();oM(false,"m1");nav("atend")
+}
+// ── Ficha da cliente — histórico de atendimentos concluídos ──────────────
+function verFichaCliente(clientId){
+  var cl=(D.clients||[]).find(function(x){return String(x.id)===String(clientId)});
+  if(!cl)return;
+  var historico=(D.agenda||[]).filter(function(a){
+    return String(a.clientId)===String(clientId)&&a.status==="concluido"
+  }).sort(function(a,b){
+    var da=a.completedAt||a.date||"";var db=b.completedAt||b.date||"";
+    return db.localeCompare(da); // mais recente primeiro
+  });
+
+  var bd=gi("m2b");bd.innerHTML="";
+  var tt=ce("div","mt");tt.textContent="👤 "+cl.name;bd.appendChild(tt);
+  if(cl.phone){
+    var ph=ce("div");ph.style.cssText="font-size:12px;color:#9ca3af;margin-bottom:14px";ph.textContent="📱 "+cl.phone;bd.appendChild(ph);
+  }
+
+  if(!historico.length){
+    var em=ce("div");em.style.cssText="text-align:center;padding:24px 12px;color:#9ca3af;font-size:12.5px";
+    em.textContent="Nenhum atendimento concluído ainda para esta cliente.";bd.appendChild(em);
+  }else{
+    var list=ce("div");list.style.cssText="max-height:400px;overflow-y:auto";
+    historico.forEach(function(h){
+      var item=ce("div");item.style.cssText="border-bottom:1px solid var(--bd);padding:10px 0";
+      var top=ce("div");top.style.cssText="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px";
+      var dataStr=(h.completedAt||h.date||"").split("-").reverse().join("/");
+      var dEl=ce("div");dEl.style.cssText="font-size:12px;font-weight:600;color:#4A6741";dEl.textContent=dataStr;
+      var sEl=ce("div");sEl.style.cssText="font-size:11px;color:#9ca3af";sEl.textContent=h.service||"";
+      top.appendChild(dEl);top.appendChild(sEl);item.appendChild(top);
+      if(h.notas){
+        var nEl=ce("div");nEl.style.cssText="font-size:12.5px;color:#3D2B1F;line-height:1.4;background:#f9fafb;border-radius:8px;padding:8px 10px;margin-top:4px";
+        nEl.textContent=h.notas; // textContent — nunca passa por parser de HTML, seguro por construção
+        item.appendChild(nEl);
+      }
+      list.appendChild(item);
+    });
+    bd.appendChild(list);
+  }
+
+  var closeB=ce("button","btn bpj");closeB.style.cssText="width:100%;margin-top:14px";closeB.textContent="Fechar";
+  closeB.onclick=function(){oM(false,"m2")};
+  bd.appendChild(closeB);
+  oM(true,"m2");
 }
 function rClientes(c){
   var g=ce("div","g2");
@@ -8883,13 +8935,14 @@ function rAtend(c){
     }else{
       var cListP=ce("div","txl");
       filtered.forEach(function(cl){
-        var rw=ce("div","txr");
+        var rw=ce("div","txr");rw.style.cursor="pointer";
       var isAniv=cl.birthdate&&parseInt((cl.birthdate||"").split("-")[1])===mesAtual;
       rw.innerHTML="<div class='txi' style='background:#fff0f7'>"+(isAniv?"🎂":"👤")+"</div>"
         +"<div class='txin'><div class='txd'>"+escHTML(cl.name)+"</div>"
         +"<div class='txm'>"+escHTML(cl.phone||"")+(cl.birthdate?" · nasc. "+escHTML(cl.birthdate.split("-").reverse().slice(0,2).join("/")):"")+"</div></div>";
+      (function(id){rw.onclick=function(){verFichaCliente(id)}})(cl.id);
       var db=ce("button","db");db.textContent="🗑";
-      (function(id){db.onclick=function(){if(confirm("Excluir cliente?")){D.clients=(D.clients||[]).filter(function(x){return String(x.id)!==String(id)});sv();nav("atend")}}})(cl.id);
+      (function(id){db.onclick=function(ev){ev.stopPropagation();if(confirm("Excluir cliente?")){D.clients=(D.clients||[]).filter(function(x){return String(x.id)!==String(id)});sv();nav("atend")}}})(cl.id);
       rw.appendChild(db);cListP.appendChild(rw)
       });wrap.appendChild(cListP)
     }
@@ -8905,6 +8958,8 @@ function rAtend(c){
   clientsCard.appendChild(clCardSh);
   clientsCard.appendChild(cliPanel);
   cliPanel.style.display="block";
+  renderClientList(); // desenha a lista pela primeira vez — antes isso nunca era chamado
+  srchInp.oninput=function(){renderClientList(this.value)}; // busca também nunca estava ligada
   c.appendChild(clientsCard);// ── 4. ANIVERSARIANTES DO MÊS (sorted by day) ──────────────
   var aniversariantes=(D.clients||[]).filter(function(cl){
     if(!cl.birthdate)return false;
