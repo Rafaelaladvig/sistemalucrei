@@ -499,7 +499,11 @@ button,input,select,textarea{font-family:inherit;font-size:14px}
     <input id="a-nm" class="ai" placeholder="Nome completo" type="text">
     <input id="a-ph" class="ai" placeholder="WhatsApp com DDD (ex: 51999999999)" type="tel" inputmode="numeric" style="display:none">
     <input id="a-em" class="ai" placeholder="E-mail" type="email" autocapitalize="off" autocorrect="off" spellcheck="false" autocomplete="email">
-    <input id="a-pw" class="ai" placeholder="Senha (mínimo 6 caracteres)" type="password">
+    <input id="a-pw" class="ai" placeholder="Senha (mínimo 6 caracteres)" type="password" autocomplete="current-password">
+    <label id="a-remember-row" style="display:none;align-items:center;gap:8px;margin:8px 0 2px;cursor:pointer;font-size:12.5px;color:#6b7280">
+      <input type="checkbox" id="a-remember" checked style="accent-color:#4A6741;width:14px;height:14px">
+      Manter-me conectada neste aparelho
+    </label>
     <div id="a-psel">
       <div style="font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#9ca3af;margin-bottom:9px">PERFIL</div>
       <div class="psel">
@@ -927,7 +931,7 @@ var MIGRATION_FLAGS = {
 async function apiCall(path, opts){
   opts = opts || {};
   var headers = Object.assign({"Content-Type":"application/json"}, opts.headers||{});
-  var sessTok = ls_get("lc-api-token");
+  var sessTok = getToken();
   var sessEm = ls_get("lc-api-email");
   if(sessTok)headers["x-session-token"]=sessTok;
   if(sessEm)headers["x-session-email"]=sessEm;
@@ -960,6 +964,22 @@ var SK_SES="lc-ses";
 
 function ls_get(k){try{return localStorage.getItem(k)}catch(e){return null}}
 function ls_set(k,v){try{localStorage.setItem(k,v)}catch(e){}}
+// "Manter-me conectada": marcado (padrão, igual ao comportamento de sempre)
+// guarda em localStorage — sobrevive a fechar o navegador. Desmarcado guarda
+// só em sessionStorage — a sessão termina quando a aba/navegador fecha.
+function setToken(token,remember){
+  if(remember===false){
+    try{sessionStorage.setItem("lc-api-token",token)}catch(e){}
+    ls_set("lc-api-token","");
+  }else{
+    ls_set("lc-api-token",token);
+    try{sessionStorage.removeItem("lc-api-token")}catch(e){}
+  }
+}
+function getToken(){
+  try{var s=sessionStorage.getItem("lc-api-token");if(s)return s}catch(e){}
+  return ls_get("lc-api-token");
+}
 
 // ─── Supabase REST helpers ───────────────────────────────────────────────────
 async function sbGet(table, match){
@@ -1870,6 +1890,7 @@ function setMode(m){
   gi("a-lt").textContent=m==="signup"?"Já tem conta? ":"Não tem conta? ";
   gi("a-la").textContent=m==="signup"?"Entrar":"Criar agora";
   var fpRow=gi("a-fp-row");if(fpRow)fpRow.style.display=m==="login"?"block":"none";
+  var remRow=gi("a-remember-row");if(remRow)remRow.style.display=m==="login"?"flex":"none";
 }
 function showErr(msg){gi("aerr").textContent=msg;gi("aerr").style.display="block"}
 
@@ -1886,7 +1907,7 @@ async function authGo(){
       var accessCode=(gi("a-code")?gi("a-code").value.trim().toUpperCase():"");
       var apiResReg = await apiCall("/api/auth/register", {method:"POST", body:{name:nm, email:em, pw:pw, perfil:selPerf, phone:ph, accessCode:accessCode}});
       if(apiResReg.ok && apiResReg.data.ok){
-        ls_set("lc-api-token", apiResReg.data.token);
+        setToken(apiResReg.data.token,true);
         ls_set("lc-api-email", em);
         var u2=getUsers();u2[em]={name:nm,pw:"(gerenciado pelo servidor)",perfil:selPerf,phone:ph,email:em};saveUsers(u2);
         // O backend manda ok:true mesmo pra conta pending (authorized:false) — o token
@@ -1922,7 +1943,8 @@ async function authGo(){
       var apiRes = await apiCall("/api/auth/login", {method:"POST", body:{email:em, pw:pw}});
       if(apiRes.ok && apiRes.data.ok){
         // Login via Railway funcionou — salvar token de sessão da API
-        ls_set("lc-api-token", apiRes.data.token);
+        var remember=gi("a-remember")?gi("a-remember").checked:true;
+        setToken(apiRes.data.token,remember);
         ls_set("lc-api-email", em);
         var usr2 = apiRes.data.user;
         ldUser(em);D.userName=usr2.name;D.userEmail=usr2.email||em;D.perfil=usr2.perfil||"autonoma";
@@ -1946,7 +1968,7 @@ async function authGo(){
       // Usuário não está no localStorage — tentar Railway novamente
       var retryRes=await apiCall("/api/auth/login",{method:"POST",body:{email:em,pw:pw}});
       if(retryRes.ok&&retryRes.data.ok){
-        ls_set("lc-api-token",retryRes.data.token);
+        setToken(retryRes.data.token,gi("a-remember")?gi("a-remember").checked:true);
         ls_set("lc-api-email",em);
         var usr3=retryRes.data.user;
         ldUser(em);D.userName=usr3.name;D.userEmail=usr3.email||em;D.perfil=usr3.perfil||"autonoma";
@@ -2602,10 +2624,10 @@ function logout(){
   if(_email){try{ls_set("lc-last-logout-"+_email, JSON.stringify({at:new Date().toISOString()}))}catch(e){}}
   // Limpar credenciais da API Railway (Etapa 2)
   try{
-    var tok=ls_get("lc-api-token");
+    var tok=getToken();
     if(tok)apiCall("/api/auth/logout",{method:"POST"}).catch(function(){});
   }catch(e){}
-  ls_set("lc-api-token","");ls_set("lc-api-email","");
+  ls_set("lc-api-token","");ls_set("lc-api-email","");try{sessionStorage.removeItem("lc-api-token")}catch(e){}
   clearSession();D=JSON.parse(JSON.stringify(DINIT));_email="";
   gi("sa").style.display="flex";gi("app").style.display="none";
   setMode("login");gi("a-em").value="";gi("a-pw").value="";gi("aerr").style.display="none"
@@ -5839,7 +5861,8 @@ function rContas(c){
     var eb=ce("button","db");eb.textContent="✏️";eb.style.marginRight="4px";
     (function(id){eb.onclick=function(){oAddAcc(id)}})(a.id);
     var db=ce("button","db");db.textContent="🗑";
-    (function(id){db.onclick=function(){D.accounts=(D.accounts||[]).filter(function(x){return String(x.id)!==String(id)});sv();nav("contas")}})(a.id);
+    (function(id,nome){db.onclick=function(){if(confirm("Excluir a conta \""+nome+"\"? Isso não apaga os lançamentos já feitos nela, só a conta em si."))
+      {D.accounts=(D.accounts||[]).filter(function(x){return String(x.id)!==String(id)});sv();nav("contas")}}})(a.id,a.name);
     box.appendChild(ico);box.appendChild(info);box.appendChild(val);box.appendChild(eb);box.appendChild(db);c.appendChild(box)
   });
   var ab=ce("button");ab.style.cssText="width:100%;padding:12px;border-radius:10px;border:2px dashed "+AC+";color:"+AC+";background:transparent;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;margin-top:4px";
@@ -7416,7 +7439,7 @@ function rPJD(c,mk){
   var lucro=fat-tD;
   var invTotal=totalInvested(true);
   var saldoContas=(D.accounts||[]).filter(function(a){return a.ctx==="pj"||a.ctx==="both"})
-    .reduce(function(s,a){return s+Math.max(0,accBal(a.id))},0);
+    .reduce(function(s,a){return s+accBal(a.id)},0);
   var plan=(D.pj.plan||{})[mk]||{};
   var meta=plan.revenueGoal||0;
   var cli=rec.reduce(function(s,t){return s+(t.clients||1)},0);
@@ -7425,9 +7448,10 @@ function rPJD(c,mk){
   var hero=ce("div","hero hero-main");
   hero.style.background="linear-gradient(135deg,#C4693A,#9e4f27)";
   hero.innerHTML="<div class='hl'>FLUXO DE CAIXA</div>"
-    +"<div class='hv'>"+R(lucro)+"</div>"
+    +"<div class='hv'>"+R(saldoContas)+"</div>"
+    +"<div style='font-size:11px;opacity:.55;margin-top:-6px;margin-bottom:8px'>Saldo inicial + entradas − saídas</div>"
     +"<div class='hrow' style='grid-template-columns:1fr 1fr'>"
-    +"<div class='hi'><div class='hil'>SALDO CONTAS</div><div class='hiv' style='color:#f5d9ca'>"+R(saldoContas)+"</div></div>"
+    +"<div class='hi'><div class='hil'>LUCRO DO MÊS</div><div class='hiv' style='color:"+(lucro>=0?"#86efac":"#fca5a5")+"'>"+R(lucro)+"</div></div>"
     +"<div class='hi'><div class='hil'>ENTRADAS</div><div class='hiv' style='color:#86efac'>"+R(fat)+"</div></div>"
     +"<div class='hi'><div class='hil'>SAÍDAS</div><div class='hiv' style='color:#fca5a5'>"+R(tD)+"</div></div>"
     +"<div class='hi'><div class='hil'>INVESTIDO</div><div class='hiv' style='color:#a8c4a2'>"+R(invTotal)+"</div></div>"
@@ -8991,6 +9015,48 @@ function rAtend(c){
       +"<div style='font-size:10px;color:#9ca3af;margin-top:1px'>"+k.s+"</div>";
     g.appendChild(d)
   });c.appendChild(g);
+
+  // ── 1.5 BUSCAR POR PERÍODO ───────────────────────────────────
+  var perCard=ce("div","card");
+  perCard.innerHTML="<div class='sh'><div class='st'>🔎 Buscar atendimentos por período</div></div>";
+  var perRow=ce("div","g2");perRow.style.marginBottom="8px";
+  var perDe=ce("input","inp");perDe.id="per-de";perDe.type="date";perDe.style.marginBottom="0";
+  var perDeWrap=ce("div");perDeWrap.innerHTML="<label class='lbl'>De</label>";perDeWrap.appendChild(perDe);
+  var perAte=ce("input","inp");perAte.id="per-ate";perAte.type="date";perAte.value=hoje;perAte.style.marginBottom="0";
+  var perAteWrap=ce("div");perAteWrap.innerHTML="<label class='lbl'>Até</label>";perAteWrap.appendChild(perAte);
+  perRow.appendChild(perDeWrap);perRow.appendChild(perAteWrap);perCard.appendChild(perRow);
+  var perStLbl=ce("label","lbl");perStLbl.style.cssText="display:block;margin-bottom:4px";perStLbl.textContent="Status";perCard.appendChild(perStLbl);
+  var perSt=ce("select","sel");perSt.id="per-status";perSt.style.marginBottom="8px";
+  [["todos","Todos"],["pendente","Pendentes"],["concluido","Concluídos"],["cancelado","Cancelados"]].forEach(function(x){var o=ce("option");o.value=x[0];o.textContent=x[1];perSt.appendChild(o)});
+  perCard.appendChild(perSt);
+  var perBtn=ce("button","btn bpj");perBtn.style.width="100%";perBtn.textContent="Buscar";
+  var perResults=ce("div");perResults.id="per-results";perResults.style.marginTop="10px";
+  perBtn.onclick=function(){
+    var de=gi("per-de").value;var ate=gi("per-ate").value;var st=gi("per-status").value;
+    if(!de||!ate){alert("Selecione o período (de/até).");return}
+    var achados=(D.agenda||[]).filter(function(a){
+      if(!a.date||a.date<de||a.date>ate)return false;
+      if(st!=="todos"&&a.status!==st)return false;
+      return true;
+    }).sort(function(a,b){return a.date>b.date?1:-1});
+    perResults.innerHTML="";
+    if(!achados.length){
+      var em=ce("div");em.style.cssText="text-align:center;padding:16px;color:#9ca3af;font-size:12px;font-style:italic";
+      em.textContent="Nenhum atendimento encontrado nesse período.";perResults.appendChild(em);return
+    }
+    var resumo=ce("div");resumo.style.cssText="font-size:11px;color:#6b7280;margin-bottom:8px";
+    resumo.textContent=achados.length+" atendimento(s) encontrado(s)";perResults.appendChild(resumo);
+    achados.forEach(function(a){
+      var rw=ce("div","txr");
+      var statusIcon=a.status==="concluido"?"✅":a.status==="cancelado"?"❌":"⏳";
+      rw.innerHTML="<div class='txi'>"+statusIcon+"</div>"
+        +"<div class='txin'><div class='txd'>"+escHTML(a.clientName||"—")+"</div>"
+        +"<div class='txm'>"+escHTML(a.serviceRealizado||a.service||"")+" · "+escHTML(a.date)+(a.time?" "+escHTML(a.time):"")+"</div></div>"
+        +"<span class='txa'>"+R(a.value||0)+"</span>";
+      perResults.appendChild(rw);
+    });
+  };
+  perCard.appendChild(perBtn);perCard.appendChild(perResults);c.appendChild(perCard);
 
   // ── 2. CADASTRAR CLIENTE (em cima) ─────────────────────────
   var clCard=ce("div","card");
