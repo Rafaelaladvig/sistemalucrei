@@ -5893,6 +5893,16 @@ function oAddAcc(editId){
   [["both","Pessoal e Negócio"],["pf","Pessoal"],["pj","Negócio"]].forEach(function(x){var o=ce("option");o.value=x[0];o.textContent=x[1];ctxS.appendChild(o)});bd.appendChild(ctxS);
   if(editAcc)ctxS.value=editAcc.ctx;
   var brow=ce("div","brow");
+  if(editAcc){
+    var bdel=ce("button","btn bou");bdel.style.cssText="color:#dc2626;border-color:#fecaca";bdel.textContent="Excluir";
+    bdel.onclick=function(){
+      if(confirm("Excluir a conta \""+editAcc.name+"\"? Isso não apaga os lançamentos já feitos nela, só a conta em si.")){
+        D.accounts=(D.accounts||[]).filter(function(x){return String(x.id)!==String(editAcc.id)});
+        sv();oM(false,"m1");nav("contas");
+      }
+    };
+    brow.appendChild(bdel);
+  }
   var bc=ce("button","btn bou");bc.textContent="Cancelar";bc.onclick=function(){oM(false,"m1")};
   var bs=ce("button","btn bpf");bs.style.flex="2";bs.textContent="Salvar";
   bs.onclick=function(){var n=gi("ac-nm").value.trim();if(!n)return;var odLim=gi("ac-od")&&gi("ac-od").checked?parseFloat(gi("ac-od-lim").value)||0:0;
@@ -8517,7 +8527,18 @@ function oBaixa(id){
   // Payment method
   var payLbl=ce("label","lbl");payLbl.style.cssText="display:block;margin-bottom:4px";payLbl.textContent="Forma de pagamento";bd.appendChild(payLbl);
   var payS=ce("select","sel");payS.id="bxp";payS.style.marginBottom="12px";
-  PAY.forEach(function(p){var o=ce("option");o.textContent=p;payS.appendChild(o)});bd.appendChild(payS);
+  PAY.forEach(function(p){var o=ce("option");o.textContent=p;payS.appendChild(o)});
+  var notinhaOpt=ce("option");notinhaOpt.textContent="Notinha (parcelado com a cliente)";payS.appendChild(notinhaOpt);
+  bd.appendChild(payS);
+
+  // ── NOTINHA: parcelamento direto com a cliente, sem máquina ──────────
+  var notWrap=ce("div");notWrap.id="bx-notinha-wrap";notWrap.style.cssText="display:none;border:1px solid #fde68a;background:#fffbeb;border-radius:10px;padding:10px 12px;margin-bottom:12px";
+  var notQtdLbl=ce("label","lbl");notQtdLbl.style.cssText="display:block;margin-bottom:4px";notQtdLbl.textContent="Quantas parcelas?";notWrap.appendChild(notQtdLbl);
+  var notQtd=ce("input","inp");notQtd.id="bx-not-qtd";notQtd.type="number";notQtd.min="1";notQtd.max="24";notQtd.value="2";notQtd.style.marginBottom="8px";notWrap.appendChild(notQtd);
+  var notVencLbl=ce("label","lbl");notVencLbl.style.cssText="display:block;margin-bottom:4px";notVencLbl.textContent="Vencimento da 1ª parcela";notWrap.appendChild(notVencLbl);
+  var notVenc=ce("input","inp");notVenc.id="bx-not-venc";notVenc.type="date";notVenc.style.marginBottom="8px";notWrap.appendChild(notVenc);
+  var notPreview=ce("div");notPreview.id="bx-not-preview";notPreview.style.cssText="font-size:12px;color:#92400e;line-height:1.5";notWrap.appendChild(notPreview);
+  bd.appendChild(notWrap);
 
   // ── MÁQUINA section: shown for Crédito / Débito / PIX via máquina ──
   var maqData=D.maquinas||[];
@@ -8613,11 +8634,20 @@ function oBaixa(id){
       var isCredit=pay==="Cartão de Crédito";
       var isDebit=pay==="Débito";
       var isPix=pay==="PIX";
+      var isNotinha=pay==="Notinha (parcelado com a cliente)";
       // Machine is used for: Crédito, Débito, PIX via máquina (when machines exist)
-      var needsMaq=isCredit||isDebit||(isPix&&maqData.length);
+      var needsMaq=(isCredit||isDebit||(isPix&&maqData.length))&&!isNotinha;
       // Manual account needed when NOT using machine
       // PIX direto (no machines), Dinheiro, Transferência, Saque
-      var needsManualAcc=(isPix&&!maqData.length)||pay==="Dinheiro"||pay==="Transferência"||pay==="Saque";
+      var needsManualAcc=((isPix&&!maqData.length)||pay==="Dinheiro"||pay==="Transferência"||pay==="Saque")&&!isNotinha;
+
+      var notWrapEl=gi("bx-notinha-wrap");
+      if(notWrapEl)notWrapEl.style.display=isNotinha?"block":"none";
+      if(isNotinha){
+        var vEl=gi("bx-not-venc");
+        if(vEl&&!vEl.value){var d30=new Date();d30.setDate(d30.getDate()+30);vEl.value=d30.toISOString().slice(0,10)}
+        atualizarPreviewNotinha();
+      }
 
       // Show/hide machine section
       if(maqWrapEl){
@@ -8642,6 +8672,16 @@ function oBaixa(id){
       // Show/hide manual account — AFTER machine section, no override
       if(accWrapEl)accWrapEl.style.display=needsManualAcc?"block":"none";
     }
+    function atualizarPreviewNotinha(){
+      var prev=gi("bx-not-preview");if(!prev)return;
+      var qtd=parseInt(gi("bx-not-qtd")?gi("bx-not-qtd").value:1)||1;
+      var rawV=(gi("bxv")?gi("bxv").value:"0").toString().replace(",",".");
+      var total=parseFloat(rawV)||0;
+      var valorParc=qtd>0?total/qtd:total;
+      prev.textContent=qtd+"x de "+R(valorParc)+" · total "+R(total);
+    }
+    var _notQtdEl=gi("bx-not-qtd");if(_notQtdEl)_notQtdEl.oninput=atualizarPreviewNotinha;
+    var _bxvEl=gi("bxv");if(_bxvEl)_bxvEl.addEventListener("input",atualizarPreviewNotinha);
 
     if(payEl){payEl.onchange=onPayChange;onPayChange()}
 
@@ -8761,17 +8801,42 @@ function svBaixa(id){
     }
   }
   var vlLiquido=vl*(1-taxaPct/100);
-  var tx={id:Date.now(),type:"entrada",category:catN,cat:catN,amount:vl,clients:1,
-    description:svcRealizado+" — "+ag.clientName+(discountAmt>0?" (desc. "+R(discountAmt)+")":""),
-    payMethod:gi("bxp")?gi("bxp").value:"",
-    accountId:ap[0]||(maqObj?String(maqObj.accountId||""):""),
-    accountName:ap[1]||(maqObj?maqObj.accountName||"":""),
-    isFirstTime:ag.isFirstTime,date:endDate,durationMin:durationMin,
-    service:svcRealizado,clientId:ag.clientId,clientName:ag.clientName,
-    originalValue:originalVal,discount:discountAmt,finalValue:vl,
-    vlLiquido:vlLiquido,maquina:maqObj?maqObj.name:"",
-    parcelas:parcN,taxaMaquina:taxaPct,taxaValor:maqObj?vl-vlLiquido:0};
-  (D.pj.transactions=D.pj.transactions||[]).unshift(tx);
+  var payMethodSel=gi("bxp")?gi("bxp").value:"";
+  var isNotinha=payMethodSel==="Notinha (parcelado com a cliente)";
+  var tx;
+  if(isNotinha){
+    var notQtdVal=Math.max(1,parseInt(gi("bx-not-qtd")?gi("bx-not-qtd").value:1)||1);
+    var notVencVal=gi("bx-not-venc")?gi("bx-not-venc").value:endDate;
+    var valorParc=Math.round((vl/notQtdVal)*100)/100;
+    var notinhaSeed="notinha-"+Date.now();
+    var parcelasTx=[];
+    for(var pi=0;pi<notQtdVal;pi++){
+      var dVenc=new Date(notVencVal+"T00:00:00");dVenc.setMonth(dVenc.getMonth()+pi);
+      var dVencStr=dVenc.toISOString().slice(0,10);
+      var ajusteCentavos=(pi===notQtdVal-1)?Math.round((vl-valorParc*(notQtdVal-1))*100)/100:valorParc;
+      parcelasTx.push({id:Date.now()+pi,type:"entrada",category:catN,cat:catN,amount:ajusteCentavos,clients:pi===0?1:0,
+        description:svcRealizado+" — "+ag.clientName+" (parcela "+(pi+1)+"/"+notQtdVal+")",
+        payMethod:"Notinha",accountId:"",accountName:"",
+        isFirstTime:ag.isFirstTime,date:dVencStr,pending:dVencStr>tod(),
+        service:svcRealizado,clientId:ag.clientId,clientName:ag.clientName,
+        originalValue:originalVal,discount:pi===0?discountAmt:0,finalValue:ajusteCentavos,
+        vlLiquido:ajusteCentavos,notinhaSeed:notinhaSeed,parcelaAtual:pi+1,parcelasTotal:notQtdVal});
+    }
+    parcelasTx.forEach(function(p){(D.pj.transactions=D.pj.transactions||[]).unshift(p)});
+    tx=parcelasTx[0]; // referência representativa — usada abaixo pra atualizar agenda/histórico
+  }else{
+    tx={id:Date.now(),type:"entrada",category:catN,cat:catN,amount:vl,clients:1,
+      description:svcRealizado+" — "+ag.clientName+(discountAmt>0?" (desc. "+R(discountAmt)+")":""),
+      payMethod:payMethodSel,
+      accountId:ap[0]||(maqObj?String(maqObj.accountId||""):""),
+      accountName:ap[1]||(maqObj?maqObj.accountName||"":""),
+      isFirstTime:ag.isFirstTime,date:endDate,durationMin:durationMin,
+      service:svcRealizado,clientId:ag.clientId,clientName:ag.clientName,
+      originalValue:originalVal,discount:discountAmt,finalValue:vl,
+      vlLiquido:vlLiquido,maquina:maqObj?maqObj.name:"",
+      parcelas:parcN,taxaMaquina:taxaPct,taxaValor:maqObj?vl-vlLiquido:0};
+    (D.pj.transactions=D.pj.transactions||[]).unshift(tx);
+  }
   // Update client visit history
   if(ag.clientId){
     D.clients=(D.clients||[]).map(function(cl){
@@ -9016,9 +9081,12 @@ function rAtend(c){
     g.appendChild(d)
   });c.appendChild(g);
 
-  // ── 1.5 BUSCAR POR PERÍODO ───────────────────────────────────
-  var perCard=ce("div","card");
-  perCard.innerHTML="<div class='sh'><div class='st'>🔎 Buscar atendimentos por período</div></div>";
+  // ── 1.5 BUSCAR POR PERÍODO — discreto, recolhido por padrão ─────
+  var perToggle=ce("div");
+  perToggle.style.cssText="display:flex;align-items:center;gap:6px;padding:8px 4px;color:#9ca3af;font-size:12px;cursor:pointer;user-select:none";
+  perToggle.innerHTML="<span id='per-arrow'>▸</span> Buscar por período";
+  c.appendChild(perToggle);
+  var perCard=ce("div","card");perCard.style.display="none";perCard.style.marginTop="-6px";
   var perRow=ce("div","g2");perRow.style.marginBottom="8px";
   var perDe=ce("input","inp");perDe.id="per-de";perDe.type="date";perDe.style.marginBottom="0";
   var perDeWrap=ce("div");perDeWrap.innerHTML="<label class='lbl'>De</label>";perDeWrap.appendChild(perDe);
@@ -9031,6 +9099,11 @@ function rAtend(c){
   perCard.appendChild(perSt);
   var perBtn=ce("button","btn bpj");perBtn.style.width="100%";perBtn.textContent="Buscar";
   var perResults=ce("div");perResults.id="per-results";perResults.style.marginTop="10px";
+  perToggle.onclick=function(){
+    var open=perCard.style.display!=="none";
+    perCard.style.display=open?"none":"block";
+    gi("per-arrow").textContent=open?"▸":"▾";
+  };
   perBtn.onclick=function(){
     var de=gi("per-de").value;var ate=gi("per-ate").value;var st=gi("per-status").value;
     if(!de||!ate){alert("Selecione o período (de/até).");return}
