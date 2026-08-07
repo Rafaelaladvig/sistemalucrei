@@ -6697,35 +6697,7 @@ function statusVisual(ag){
   if(ag.confirmado)return{txt:"Confirmado",bg:"#dbeafe",col:"#1d4ed8"};
   return{txt:"Agendado",bg:"#f3f4f6",col:"#6b7280"};
 }
-function rCalendDia(c){
-  var selDate=window._calSelDay||tod();
-  var d=new Date(selDate+"T12:00:00");
-  var label=["Domingo","Segunda","Terça","Quarta","Quinta","Sexta","Sábado"][d.getDay()]+", "+d.getDate()+" de "+MF[d.getMonth()];
-  c.appendChild(calNavHeader(label,function(){var nd=new Date(selDate+"T12:00:00");nd.setDate(nd.getDate()-1);window._calSelDay=nd.toISOString().slice(0,10);nav("calend")},
-    function(){var nd=new Date(selDate+"T12:00:00");nd.setDate(nd.getDate()+1);window._calSelDay=nd.toISOString().slice(0,10);nav("calend")},
-    function(){window._calSelDay=tod();nav("calend")}));
-
-  var ags=(D.agenda||[]).filter(function(a){return a.date===selDate&&a.status!=="cancelado"}).sort(function(a,b){return(a.time||"").localeCompare(b.time||"")});
-  var card=ce("div","card");card.style.cssText="padding:0;overflow:hidden";
-  for(var hh=7;hh<=20;hh++){
-    var hStr=String(hh).padStart(2,"0")+":00";
-    var row=ce("div");row.style.cssText="display:flex;border-bottom:1px solid var(--bd);min-height:44px";
-    var hLbl=ce("div");hLbl.style.cssText="width:48px;flex-shrink:0;font-size:10.5px;color:#9ca3af;padding:6px 4px;text-align:right;border-right:1px solid var(--bd)";hLbl.textContent=hStr;
-    row.appendChild(hLbl);
-    var slot=ce("div");slot.style.cssText="flex:1;padding:3px 6px;display:flex;flex-direction:column;gap:3px";
-    var itemsHere=ags.filter(function(a){var ah=parseInt((a.time||"00:00").split(":")[0]);return ah===hh});
-    itemsHere.forEach(function(ag){
-      var sv2=statusVisual(ag);
-      var card2=ce("div");card2.style.cssText="background:"+sv2.bg+";border-radius:8px;padding:6px 9px;cursor:pointer";
-      card2.innerHTML="<div style='font-size:11.5px;font-weight:600;color:"+sv2.col+"'>"+escHTML(ag.time||"")+(ag.endTime?"–"+escHTML(ag.endTime):"")+" · "+escHTML(ag.clientName||"—")+"</div>"
-        +"<div style='font-size:10.5px;color:#6b7280'>"+escHTML(ag.serviceRealizado||ag.service||"")+" · "+sv2.txt+"</div>";
-      (function(aid){card2.onclick=function(){oDetalheAg(aid)}})(ag.id);
-      slot.appendChild(card2);
-    });
-    row.appendChild(slot);card.appendChild(row);
-  }
-  c.appendChild(card);
-}
+function timeToMin(t){var p=(t||"00:00").split(":");return(parseInt(p[0])||0)*60+(parseInt(p[1])||0)}
 function rCalendSemana(c){
   var selDate=window._calSelDay||tod();
   var d=new Date(selDate+"T12:00:00");
@@ -6736,27 +6708,63 @@ function rCalendSemana(c){
     function(){var nd=new Date(selDate+"T12:00:00");nd.setDate(nd.getDate()+7);window._calSelDay=nd.toISOString().slice(0,10);nav("calend")},
     function(){window._calSelDay=tod();nav("calend")}));
 
+  var bh=(D.pj&&D.pj.businessHours)||{};
+  var hStart=bh.start?parseInt(bh.start.split(":")[0]):7;
+  var hEnd=bh.end?parseInt(bh.end.split(":")[0]):20;
+  if(hEnd<=hStart){hStart=7;hEnd=20} // configuração inválida — cai no padrão, não trava a tela
+  var diasAtivos=bh.days||["seg","ter","qua","qui","sex","sab"]; // domingo fora do padrão, editável em Configurações
+  var hourHeight=40;
+  var totalHeight=(hEnd-hStart)*hourHeight;
   var dayNames=["SEG","TER","QUA","QUI","SEX","SÁB","DOM"];
+  var dayKeys=["seg","ter","qua","qui","sex","sab","dom"];
+
+  var outer=ce("div");outer.style.cssText="overflow-x:auto;-webkit-overflow-scrolling:touch";
+  var grid=ce("div");grid.style.cssText="display:flex;min-width:"+(46+7*86)+"px";
+
+  // Coluna de horários
+  var hourCol=ce("div");hourCol.style.cssText="width:40px;flex-shrink:0";
+  var hourColHead=ce("div");hourColHead.style.height="34px";hourCol.appendChild(hourColHead);
+  for(var hh=hStart;hh<hEnd;hh++){
+    var hLbl=ce("div");hLbl.style.cssText="height:"+hourHeight+"px;font-size:9.5px;color:#9ca3af;text-align:right;padding-right:4px;box-sizing:border-box;border-top:1px solid #f3f4f6";
+    hLbl.textContent=String(hh).padStart(2,"0")+":00";hourCol.appendChild(hLbl);
+  }
+  grid.appendChild(hourCol);
+
   weekDays.forEach(function(wd,idx){
     var dStr=wd.toISOString().slice(0,10);
     var isToday=dStr===tod();
-    var ags=(D.agenda||[]).filter(function(a){return a.date===dStr&&a.status!=="cancelado"}).sort(function(a,b){return(a.time||"").localeCompare(b.time||"")});
-    var dayCard=ce("div","card");dayCard.style.cssText="padding:8px 12px;margin-bottom:6px"+(isToday?";border:1.5px solid #C4693A":"");
-    var head=ce("div");head.style.cssText="display:flex;align-items:center;gap:8px;margin-bottom:"+(ags.length?"6px":"0");
-    head.innerHTML="<span style='font-size:10.5px;font-weight:700;color:"+(isToday?"#C4693A":"#9ca3af")+"'>"+dayNames[idx]+" "+wd.getDate()+"</span>"
-      +"<span style='font-size:10px;color:#9ca3af'>"+(ags.length?ags.length+" atendimento(s)":"")+"</span>";
-    dayCard.appendChild(head);
-    ags.forEach(function(ag){
+    var isDiaAtivo=diasAtivos.indexOf(dayKeys[idx])>-1;
+    var col=ce("div");col.style.cssText="flex:1;min-width:86px;border-left:1px solid var(--bd)"+(isDiaAtivo?"":";background:#fafafa");
+    var head=ce("div");head.style.cssText="height:34px;display:flex;flex-direction:column;align-items:center;justify-content:center;border-bottom:1px solid var(--bd)";
+    head.innerHTML="<span style='font-size:9px;font-weight:700;color:"+(isToday?"#C4693A":isDiaAtivo?"#9ca3af":"#d1d5db")+"'>"+dayNames[idx]+"</span>"
+      +"<span style='font-size:12px;font-weight:"+(isToday?"700":"400")+";color:"+(isToday?"#C4693A":"#374151")+"'>"+wd.getDate()+"</span>";
+    col.appendChild(head);
+
+    var body=ce("div");body.style.cssText="position:relative;height:"+totalHeight+"px";
+    for(var hi=0;hi<(hEnd-hStart);hi++){
+      var gl=ce("div");gl.style.cssText="position:absolute;top:"+(hi*hourHeight)+"px;left:0;right:0;border-top:1px solid #f3f4f6";
+      body.appendChild(gl);
+    }
+    var agsDoDia=(D.agenda||[]).filter(function(a){return a.date===dStr&&a.status!=="cancelado"});
+    agsDoDia.forEach(function(ag){
+      var startMin=timeToMin(ag.time);
+      var endMin=ag.endTime?timeToMin(ag.endTime):startMin+60;
+      var top=((startMin-hStart*60)/60)*hourHeight;
+      var height=Math.max(20,((endMin-startMin)/60)*hourHeight-2);
+      if(top<0||top>totalHeight)return; // fora do horário de funcionamento configurado — não desenha bloco cortado
       var sv2=statusVisual(ag);
-      var row=ce("div");row.style.cssText="display:flex;align-items:center;gap:8px;padding:5px 0;cursor:pointer;border-top:1px solid #f3f4f6";
-      row.innerHTML="<span style='font-size:11px;color:"+sv2.col+";font-weight:600;width:42px;flex-shrink:0'>"+escHTML(ag.time||"")+"</span>"
-        +"<span style='font-size:12px;color:#374151;flex:1'>"+escHTML(ag.clientName||"—")+" · "+escHTML(ag.serviceRealizado||ag.service||"")+"</span>"
-        +"<span style='font-size:9.5px;background:"+sv2.bg+";color:"+sv2.col+";padding:2px 6px;border-radius:8px'>"+sv2.txt+"</span>";
-      (function(aid){row.onclick=function(){oDetalheAg(aid)}})(ag.id);
-      dayCard.appendChild(row);
+      var blk=ce("div");blk.style.cssText="position:absolute;top:"+top+"px;height:"+height+"px;left:2px;right:2px;background:"+sv2.bg+";border-left:3px solid "+sv2.col+";border-radius:5px;padding:2px 4px;overflow:hidden;cursor:pointer;box-sizing:border-box";
+      blk.innerHTML="<div style='font-size:9px;font-weight:700;color:"+sv2.col+";line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>"+escHTML(ag.clientName||"—")+"</div>"
+        +(height>28?"<div style='font-size:8.5px;color:#6b7280;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>"+escHTML(ag.serviceRealizado||ag.service||"")+"</div>":"");
+      (function(aid){blk.onclick=function(){oDetalheAg(aid)}})(ag.id);
+      body.appendChild(blk);
     });
-    c.appendChild(dayCard);
+    col.appendChild(body);
+    grid.appendChild(col);
   });
+  outer.appendChild(grid);
+  var wrapCard=ce("div","card");wrapCard.style.cssText="padding:0;overflow:hidden";wrapCard.appendChild(outer);
+  c.appendChild(wrapCard);
 }
 // ── Modal de detalhes do agendamento — Editar/Remarcar/Cancelar/Falta/Concluir ──
 function oDetalheAg(id){
@@ -6822,12 +6830,12 @@ function oDetalheAg(id){
 function rCalend(c,mk){
   var today=new Date();var todayStr=tod();
   if(!window._calSelDay)window._calSelDay=todayStr;
-  if(!window._calView)window._calView="mes"; // "dia"|"semana"|"mes"
+  if(!window._calView||window._calView==="dia")window._calView="mes"; // "semana"|"mes" — visão Dia removida no Sprint 1
 
   // ── Cabeçalho: seletor de visualização + novo agendamento ─────────
   var topRow=ce("div");topRow.style.cssText="display:flex;gap:6px;align-items:center;margin-bottom:8px";
   var viewSel=ce("div");viewSel.style.cssText="display:flex;background:#f3f4f6;border-radius:9px;padding:2px;flex:1";
-  [["dia","Dia"],["semana","Semana"],["mes","Mês"]].forEach(function(v){
+  [["semana","Semana"],["mes","Mês"]].forEach(function(v){
     var vb=ce("button");vb.textContent=v[1];
     var isActive=window._calView===v[0];
     vb.style.cssText="flex:1;border:none;background:"+(isActive?"#fff":"transparent")+";color:"+(isActive?"#C4693A":"#6b7280")+";font-weight:"+(isActive?"700":"500")+";font-size:12px;padding:7px 0;border-radius:7px;cursor:pointer;font-family:inherit;box-shadow:"+(isActive?"0 1px 3px rgba(0,0,0,.1)":"none");
@@ -6840,7 +6848,6 @@ function rCalend(c,mk){
   topRow.appendChild(novoBtn);
   c.appendChild(topRow);
 
-  if(window._calView==="dia"){rCalendDia(c);return}
   if(window._calView==="semana"){rCalendSemana(c);return}
   // view==="mes" continua abaixo, comportamento existente preservado
 
@@ -6911,28 +6918,17 @@ function rCalend(c,mk){
     }
     num.textContent=day;numWrap.appendChild(num);cell.appendChild(numWrap);
 
-    // Event dots as small colored pills
-    if(dm){
-      var dotsWrap=ce("div");dotsWrap.style.cssText="display:flex;flex-direction:column;gap:1px";
-      if(dm.in){var p1=ce("div");p1.style.cssText="height:4px;border-radius:3px;background:#059669;font-size:0";dotsWrap.appendChild(p1)}
-      if(dm.out){var p2=ce("div");p2.style.cssText="height:4px;border-radius:3px;background:#dc2626;font-size:0";dotsWrap.appendChild(p2)}
-      if(dm.pend){var p3=ce("div");p3.style.cssText="height:4px;border-radius:3px;background:#f59e0b;font-size:0";dotsWrap.appendChild(p3)}
-      cell.appendChild(dotsWrap)
-    }
-
-    // Atendimentos do dia — quantidade + primeiros nomes (item 5)
-    var agsDoDia=(D.agenda||[]).filter(function(a){return a.date===dStr&&a.status!=="cancelado"});
-    if(agsDoDia.length){
-      var agsWrap=ce("div");agsWrap.style.cssText="margin-top:2px;line-height:1.2";
-      agsDoDia.slice(0,2).forEach(function(a){
-        var nm=ce("div");nm.style.cssText="font-size:8px;color:#6b7280;white-space:nowrap;overflow:hidden;text-overflow:ellipsis";
-        nm.textContent=(a.clientName||"").split(" ")[0];agsWrap.appendChild(nm);
-      });
-      if(agsDoDia.length>2){
-        var mais=ce("div");mais.style.cssText="font-size:8px;color:#C4693A;font-weight:600";mais.textContent="+"+(agsDoDia.length-2);
-        agsWrap.appendChild(mais);
-      }
-      cell.appendChild(agsWrap);
+    // Indicadores do dia — 🟢 receitas recebidas · 🔴 despesas · 🟡 clientes a atender
+    // Sem nome de cliente na célula — só contagem, como pedido no Sprint 1.
+    var recDia=allTxs.filter(function(t){return t.date===dStr&&t.type==="entrada"&&!t.pending}).length;
+    var despDia=allTxs.filter(function(t){return t.date===dStr&&t.type==="saida"}).length;
+    var atendDia=(D.agenda||[]).filter(function(a){return a.date===dStr&&(a.status==="pendente"||!a.status)}).length;
+    if(recDia||despDia||atendDia){
+      var indWrap=ce("div");indWrap.style.cssText="display:flex;flex-direction:column;gap:0;align-items:center;margin-top:1px";
+      if(recDia){var li=ce("div");li.style.cssText="font-size:8px;line-height:1.3";li.textContent="🟢"+recDia;indWrap.appendChild(li)}
+      if(despDia){var ld=ce("div");ld.style.cssText="font-size:8px;line-height:1.3";ld.textContent="🔴"+despDia;indWrap.appendChild(ld)}
+      if(atendDia){var la=ce("div");la.style.cssText="font-size:8px;line-height:1.3";la.textContent="🟡"+atendDia;indWrap.appendChild(la)}
+      cell.appendChild(indWrap);
     }
 
     (function(ds){cell.onclick=function(){window._calSelDay=ds;nav("calend")}})(dStr);
@@ -10231,10 +10227,74 @@ function rConfigPJ_impl(c){
   cancelBtn2.textContent="❌ Cancelar assinatura";
   cancelBtn2.onclick=cancelarAssinatura;
   dangerCard.appendChild(cancelBtn2);c.appendChild(dangerCard);
+  c.appendChild(mkSec("Negócio",[{ic:"🕐",l:"Horário de funcionamento",sub:"Dias, horários e intervalo entre clientes",fn:function(){oHorarioFuncionamento()}}]));
   c.appendChild(mkSec("Diagnóstico",[{ic:"🔍",l:"Verificar duplicidades de atendimentos",sub:"Só identifica — nunca apaga nada sozinho",fn:function(){oDiagDuplicidades()}}]));
   c.appendChild(mkSec("App",[{ic:"🚪",l:"Sair da conta",col:"#dc2626",fn:logout}]))
 }
 // ── Diagnóstico de duplicidades antigas (item 7) — só lista, nunca apaga ──
+// ── Horário de funcionamento — usado pra melhorar a visualização da agenda
+// (Sprint 1: já colore/destaca dias e horas ativos na grade semanal) ──
+function oHorarioFuncionamento(){
+  var bh=(D.pj&&D.pj.businessHours)||{};
+  var bd=gi("m2b");bd.innerHTML="";
+  var t=ce("div","mt");t.textContent="🕐 Horário de funcionamento";bd.appendChild(t);
+  function lbl(txt){var l=ce("label","lbl");l.style.cssText="display:block;margin-bottom:4px";l.textContent=txt;return l}
+
+  bd.appendChild(lbl("Dias de atendimento"));
+  var diasWrap=ce("div");diasWrap.style.cssText="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px";
+  var diasOpts=[["seg","Seg"],["ter","Ter"],["qua","Qua"],["qui","Qui"],["sex","Sex"],["sab","Sáb"],["dom","Dom"]];
+  var diasAtivos=bh.days||["seg","ter","qua","qui","sex","sab"];
+  diasOpts.forEach(function(x){
+    var chk=ce("button");chk.type="button";chk.dataset.dia=x[0];
+    var ativo=diasAtivos.indexOf(x[0])>-1;
+    chk.style.cssText="padding:6px 10px;border-radius:8px;border:1px solid "+(ativo?"#C4693A":"#e5e7eb")+";background:"+(ativo?"#C4693A":"#fff")+";color:"+(ativo?"#fff":"#6b7280")+";font-size:11.5px;cursor:pointer;font-family:inherit";
+    chk.textContent=x[1];
+    chk.onclick=function(){
+      var newState=chk.dataset.on!=="1";
+      chk.dataset.on=newState?"1":"0";
+      chk.style.background=newState?"#C4693A":"#fff";
+      chk.style.borderColor=newState?"#C4693A":"#e5e7eb";
+      chk.style.color=newState?"#fff":"#6b7280";
+    };
+    chk.dataset.on=ativo?"1":"0";
+    diasWrap.appendChild(chk);
+  });
+  bd.appendChild(diasWrap);
+
+  var hRow=ce("div","g2");hRow.style.marginBottom="8px";
+  var hIniWrap=ce("div");hIniWrap.innerHTML="<label class='lbl'>Início</label>";
+  var hIni=ce("input","inp");hIni.id="bh-start";hIni.type="time";hIni.value=bh.start||"08:00";hIni.style.marginBottom="0";hIniWrap.appendChild(hIni);
+  var hFimWrap=ce("div");hFimWrap.innerHTML="<label class='lbl'>Fim</label>";
+  var hFim=ce("input","inp");hFim.id="bh-end";hFim.type="time";hFim.value=bh.end||"19:00";hFim.style.marginBottom="0";hFimWrap.appendChild(hFim);
+  hRow.appendChild(hIniWrap);hRow.appendChild(hFimWrap);bd.appendChild(hRow);
+
+  var almRow=ce("div","g2");almRow.style.marginBottom="8px";
+  var almIniWrap=ce("div");almIniWrap.innerHTML="<label class='lbl'>Almoço — início</label>";
+  var almIni=ce("input","inp");almIni.id="bh-lunch-start";almIni.type="time";almIni.value=bh.lunchStart||"";almIni.style.marginBottom="0";almIniWrap.appendChild(almIni);
+  var almFimWrap=ce("div");almFimWrap.innerHTML="<label class='lbl'>Almoço — fim</label>";
+  var almFim=ce("input","inp");almFim.id="bh-lunch-end";almFim.type="time";almFim.value=bh.lunchEnd||"";almFim.style.marginBottom="0";almFimWrap.appendChild(almFim);
+  almRow.appendChild(almIniWrap);almRow.appendChild(almFimWrap);bd.appendChild(almRow);
+
+  bd.appendChild(lbl("Intervalo padrão entre clientes (minutos)"));
+  var intInp=ce("input","inp");intInp.id="bh-interval";intInp.type="number";intInp.min="0";intInp.value=bh.interval||0;intInp.style.marginBottom="12px";bd.appendChild(intInp);
+
+  var brow=ce("div","brow");
+  var bc=ce("button","btn bou");bc.textContent="Cancelar";bc.onclick=function(){oM(false,"m2")};
+  var bs=ce("button","btn bpj");bs.style.flex="2";bs.textContent="Salvar";
+  bs.onclick=function(){
+    var diasSel=[];diasWrap.querySelectorAll("button").forEach(function(b){if(b.dataset.on==="1")diasSel.push(b.dataset.dia)});
+    var start=gi("bh-start").value||"08:00";var end=gi("bh-end").value||"19:00";
+    if(end<=start){alert("O horário final precisa ser depois do inicial.");return}
+    D.pj.businessHours={
+      days:diasSel,start:start,end:end,
+      lunchStart:gi("bh-lunch-start").value||"",lunchEnd:gi("bh-lunch-end").value||"",
+      interval:parseInt(gi("bh-interval").value)||0
+    };
+    sv();oM(false,"m2");nav("config");
+  };
+  brow.appendChild(bc);brow.appendChild(bs);bd.appendChild(brow);
+  oM(true,"m2");
+}
 function oDiagDuplicidades(){
   var concluidos=(D.agenda||[]).filter(function(a){return a.status==="concluido"});
   var grupos={};
