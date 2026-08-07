@@ -6678,9 +6678,171 @@ function rPFCalend(c, mk){
   c.appendChild(detCard)
 }
 
+// ── Navegação de data compartilhada (dia/semana) ──────────────────────
+function calNavHeader(label,onPrev,onNext,onToday){
+  var row=ce("div");row.style.cssText="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px";
+  var prev=ce("button");prev.textContent="‹";prev.style.cssText="background:#f3f4f6;border:none;border-radius:8px;width:32px;height:32px;font-size:16px;color:#6b7280;cursor:pointer";prev.onclick=onPrev;
+  var mid=ce("div");mid.style.cssText="display:flex;flex-direction:column;align-items:center;gap:2px";
+  var lbl2=ce("div");lbl2.style.cssText="font-size:13px;font-weight:600;color:#374151";lbl2.textContent=label;
+  var hoje2=ce("button");hoje2.textContent="Hoje";hoje2.style.cssText="background:none;border:none;color:#C4693A;font-size:10.5px;cursor:pointer;font-family:inherit;padding:0";hoje2.onclick=onToday;
+  mid.appendChild(lbl2);mid.appendChild(hoje2);
+  var next=ce("button");next.textContent="›";next.style.cssText="background:#f3f4f6;border:none;border-radius:8px;width:32px;height:32px;font-size:16px;color:#6b7280;cursor:pointer";next.onclick=onNext;
+  row.appendChild(prev);row.appendChild(mid);row.appendChild(next);
+  return row;
+}
+function statusVisual(ag){
+  if(ag.status==="concluido")return{txt:"Concluído",bg:"#d1fae5",col:"#059669"};
+  if(ag.status==="cancelado")return{txt:"Cancelado",bg:"#fee2e2",col:"#dc2626"};
+  if(ag.status==="faltou")return{txt:"Faltou",bg:"#fef3c7",col:"#d97706"};
+  if(ag.confirmado)return{txt:"Confirmado",bg:"#dbeafe",col:"#1d4ed8"};
+  return{txt:"Agendado",bg:"#f3f4f6",col:"#6b7280"};
+}
+function rCalendDia(c){
+  var selDate=window._calSelDay||tod();
+  var d=new Date(selDate+"T12:00:00");
+  var label=["Domingo","Segunda","Terça","Quarta","Quinta","Sexta","Sábado"][d.getDay()]+", "+d.getDate()+" de "+MF[d.getMonth()];
+  c.appendChild(calNavHeader(label,function(){var nd=new Date(selDate+"T12:00:00");nd.setDate(nd.getDate()-1);window._calSelDay=nd.toISOString().slice(0,10);nav("calend")},
+    function(){var nd=new Date(selDate+"T12:00:00");nd.setDate(nd.getDate()+1);window._calSelDay=nd.toISOString().slice(0,10);nav("calend")},
+    function(){window._calSelDay=tod();nav("calend")}));
+
+  var ags=(D.agenda||[]).filter(function(a){return a.date===selDate&&a.status!=="cancelado"}).sort(function(a,b){return(a.time||"").localeCompare(b.time||"")});
+  var card=ce("div","card");card.style.cssText="padding:0;overflow:hidden";
+  for(var hh=7;hh<=20;hh++){
+    var hStr=String(hh).padStart(2,"0")+":00";
+    var row=ce("div");row.style.cssText="display:flex;border-bottom:1px solid var(--bd);min-height:44px";
+    var hLbl=ce("div");hLbl.style.cssText="width:48px;flex-shrink:0;font-size:10.5px;color:#9ca3af;padding:6px 4px;text-align:right;border-right:1px solid var(--bd)";hLbl.textContent=hStr;
+    row.appendChild(hLbl);
+    var slot=ce("div");slot.style.cssText="flex:1;padding:3px 6px;display:flex;flex-direction:column;gap:3px";
+    var itemsHere=ags.filter(function(a){var ah=parseInt((a.time||"00:00").split(":")[0]);return ah===hh});
+    itemsHere.forEach(function(ag){
+      var sv2=statusVisual(ag);
+      var card2=ce("div");card2.style.cssText="background:"+sv2.bg+";border-radius:8px;padding:6px 9px;cursor:pointer";
+      card2.innerHTML="<div style='font-size:11.5px;font-weight:600;color:"+sv2.col+"'>"+escHTML(ag.time||"")+(ag.endTime?"–"+escHTML(ag.endTime):"")+" · "+escHTML(ag.clientName||"—")+"</div>"
+        +"<div style='font-size:10.5px;color:#6b7280'>"+escHTML(ag.serviceRealizado||ag.service||"")+" · "+sv2.txt+"</div>";
+      (function(aid){card2.onclick=function(){oDetalheAg(aid)}})(ag.id);
+      slot.appendChild(card2);
+    });
+    row.appendChild(slot);card.appendChild(row);
+  }
+  c.appendChild(card);
+}
+function rCalendSemana(c){
+  var selDate=window._calSelDay||tod();
+  var d=new Date(selDate+"T12:00:00");
+  var dow=d.getDay();var monday=new Date(d);monday.setDate(d.getDate()-((dow+6)%7));
+  var weekDays=[];for(var i=0;i<7;i++){var wd=new Date(monday);wd.setDate(monday.getDate()+i);weekDays.push(wd)}
+  var label=weekDays[0].getDate()+" "+MF[weekDays[0].getMonth()].slice(0,3)+" – "+weekDays[6].getDate()+" "+MF[weekDays[6].getMonth()].slice(0,3);
+  c.appendChild(calNavHeader(label,function(){var nd=new Date(selDate+"T12:00:00");nd.setDate(nd.getDate()-7);window._calSelDay=nd.toISOString().slice(0,10);nav("calend")},
+    function(){var nd=new Date(selDate+"T12:00:00");nd.setDate(nd.getDate()+7);window._calSelDay=nd.toISOString().slice(0,10);nav("calend")},
+    function(){window._calSelDay=tod();nav("calend")}));
+
+  var dayNames=["SEG","TER","QUA","QUI","SEX","SÁB","DOM"];
+  weekDays.forEach(function(wd,idx){
+    var dStr=wd.toISOString().slice(0,10);
+    var isToday=dStr===tod();
+    var ags=(D.agenda||[]).filter(function(a){return a.date===dStr&&a.status!=="cancelado"}).sort(function(a,b){return(a.time||"").localeCompare(b.time||"")});
+    var dayCard=ce("div","card");dayCard.style.cssText="padding:8px 12px;margin-bottom:6px"+(isToday?";border:1.5px solid #C4693A":"");
+    var head=ce("div");head.style.cssText="display:flex;align-items:center;gap:8px;margin-bottom:"+(ags.length?"6px":"0");
+    head.innerHTML="<span style='font-size:10.5px;font-weight:700;color:"+(isToday?"#C4693A":"#9ca3af")+"'>"+dayNames[idx]+" "+wd.getDate()+"</span>"
+      +"<span style='font-size:10px;color:#9ca3af'>"+(ags.length?ags.length+" atendimento(s)":"")+"</span>";
+    dayCard.appendChild(head);
+    ags.forEach(function(ag){
+      var sv2=statusVisual(ag);
+      var row=ce("div");row.style.cssText="display:flex;align-items:center;gap:8px;padding:5px 0;cursor:pointer;border-top:1px solid #f3f4f6";
+      row.innerHTML="<span style='font-size:11px;color:"+sv2.col+";font-weight:600;width:42px;flex-shrink:0'>"+escHTML(ag.time||"")+"</span>"
+        +"<span style='font-size:12px;color:#374151;flex:1'>"+escHTML(ag.clientName||"—")+" · "+escHTML(ag.serviceRealizado||ag.service||"")+"</span>"
+        +"<span style='font-size:9.5px;background:"+sv2.bg+";color:"+sv2.col+";padding:2px 6px;border-radius:8px'>"+sv2.txt+"</span>";
+      (function(aid){row.onclick=function(){oDetalheAg(aid)}})(ag.id);
+      dayCard.appendChild(row);
+    });
+    c.appendChild(dayCard);
+  });
+}
+// ── Modal de detalhes do agendamento — Editar/Remarcar/Cancelar/Falta/Concluir ──
+function oDetalheAg(id){
+  var ag=(D.agenda||[]).find(function(a){return String(a.id)===String(id)});if(!ag)return;
+  var cl=ag.clientId?(D.clients||[]).find(function(x){return String(x.id)===String(ag.clientId)}):null;
+  var sv2=statusVisual(ag);
+  var bd=gi("m2b");bd.innerHTML="";
+  var t=ce("div","mt");t.textContent=ag.clientName||"—";bd.appendChild(t);
+  var badge=ce("span");badge.style.cssText="display:inline-block;background:"+sv2.bg+";color:"+sv2.col+";font-size:11px;font-weight:600;padding:3px 10px;border-radius:10px;margin-bottom:12px";badge.textContent=sv2.txt;bd.appendChild(badge);
+
+  var info=ce("div");info.style.cssText="font-size:12.5px;color:#374151;line-height:2;margin-bottom:14px";
+  var linhas=[];
+  if(cl&&cl.phone)linhas.push("📱 "+cl.phone);
+  linhas.push("💇 "+(ag.serviceRealizado||ag.service||"—"));
+  linhas.push("📅 "+(ag.date?ag.date.split("-").reverse().join("/"):""));
+  linhas.push("🕐 "+(ag.time||"")+(ag.endTime?"–"+ag.endTime:""));
+  if(ag.durationMin)linhas.push("⏱ "+ag.durationMin+" min");
+  linhas.push("💰 "+R(ag.value||0));
+  if(ag.notas)linhas.push("📝 "+ag.notas);
+  info.innerHTML=linhas.map(function(l){return escHTML(l)}).join("<br>");
+  bd.appendChild(info);
+
+  var actGrid=ce("div");actGrid.style.cssText="display:grid;grid-template-columns:1fr 1fr;gap:8px";
+  var podeAgir=ag.status!=="concluido"&&ag.status!=="cancelado";
+
+  if(podeAgir){
+    var bConcluir=ce("button","btn bpj");bConcluir.style.gridColumn="1 / -1";bConcluir.textContent="✅ Concluir atendimento";
+    bConcluir.onclick=function(){oM(false,"m2");oBaixa(ag.id)};
+    actGrid.appendChild(bConcluir);
+
+    var bEditar=ce("button","btn bou");bEditar.textContent="✏️ Editar";
+    bEditar.onclick=function(){oNovoAgendamento(ag.id)};
+    actGrid.appendChild(bEditar);
+
+    var bRemarcar=ce("button","btn bou");bRemarcar.textContent="🔄 Remarcar";
+    bRemarcar.onclick=function(){oNovoAgendamento(ag.id)}; // reaproveita o mesmo modal — trocar data/hora é remarcar
+    actGrid.appendChild(bRemarcar);
+
+    var bFalta=ce("button","btn bou");bFalta.style.cssText="color:#d97706;border-color:#fde68a";bFalta.textContent="🚫 Marcar falta";
+    bFalta.onclick=function(){
+      if(!confirm("Marcar falta de "+ag.clientName+"?"))return;
+      D.agenda=(D.agenda||[]).map(function(a){return String(a.id)===String(id)?Object.assign({},a,{status:"faltou"}):a});
+      sv();oM(false,"m2");nav("calend");
+    };
+    actGrid.appendChild(bFalta);
+
+    var bCancelar=ce("button","btn bou");bCancelar.style.cssText="color:#dc2626;border-color:#fecaca";bCancelar.textContent="❌ Cancelar";
+    bCancelar.onclick=function(){
+      if(!confirm("Cancelar este agendamento?"))return;
+      var now=new Date();var cancelTime=String(now.getHours()).padStart(2,"0")+":"+String(now.getMinutes()).padStart(2,"0");
+      D.agenda=(D.agenda||[]).map(function(a){return String(a.id)===String(id)?Object.assign({},a,{status:"cancelado",canceledAt:tod(),canceledTime:cancelTime}):a});
+      sv();oM(false,"m2");nav("calend");
+    };
+    actGrid.appendChild(bCancelar);
+  }
+  bd.appendChild(actGrid);
+
+  var closeB=ce("button","btn bou");closeB.style.cssText="width:100%;margin-top:8px";closeB.textContent="Fechar";
+  closeB.onclick=function(){oM(false,"m2")};
+  bd.appendChild(closeB);
+  oM(true,"m2");
+}
 function rCalend(c,mk){
   var today=new Date();var todayStr=tod();
   if(!window._calSelDay)window._calSelDay=todayStr;
+  if(!window._calView)window._calView="mes"; // "dia"|"semana"|"mes"
+
+  // ── Cabeçalho: seletor de visualização + novo agendamento ─────────
+  var topRow=ce("div");topRow.style.cssText="display:flex;gap:6px;align-items:center;margin-bottom:8px";
+  var viewSel=ce("div");viewSel.style.cssText="display:flex;background:#f3f4f6;border-radius:9px;padding:2px;flex:1";
+  [["dia","Dia"],["semana","Semana"],["mes","Mês"]].forEach(function(v){
+    var vb=ce("button");vb.textContent=v[1];
+    var isActive=window._calView===v[0];
+    vb.style.cssText="flex:1;border:none;background:"+(isActive?"#fff":"transparent")+";color:"+(isActive?"#C4693A":"#6b7280")+";font-weight:"+(isActive?"700":"500")+";font-size:12px;padding:7px 0;border-radius:7px;cursor:pointer;font-family:inherit;box-shadow:"+(isActive?"0 1px 3px rgba(0,0,0,.1)":"none");
+    vb.onclick=function(){window._calView=v[0];nav("calend")};
+    viewSel.appendChild(vb);
+  });
+  topRow.appendChild(viewSel);
+  var novoBtn=ce("button","btn bpj");novoBtn.style.cssText="width:auto;padding:9px 14px;font-size:12.5px;white-space:nowrap";novoBtn.textContent="+ Novo";
+  novoBtn.onclick=function(){oNovoAgendamento()};
+  topRow.appendChild(novoBtn);
+  c.appendChild(topRow);
+
+  if(window._calView==="dia"){rCalendDia(c);return}
+  if(window._calView==="semana"){rCalendSemana(c);return}
+  // view==="mes" continua abaixo, comportamento existente preservado
 
   // ── Calendar grid — Google Calendar style ────────────────
   var calCard=ce("div","card");calCard.style.cssText="padding:8px;overflow:hidden";
@@ -6758,6 +6920,21 @@ function rCalend(c,mk){
       cell.appendChild(dotsWrap)
     }
 
+    // Atendimentos do dia — quantidade + primeiros nomes (item 5)
+    var agsDoDia=(D.agenda||[]).filter(function(a){return a.date===dStr&&a.status!=="cancelado"});
+    if(agsDoDia.length){
+      var agsWrap=ce("div");agsWrap.style.cssText="margin-top:2px;line-height:1.2";
+      agsDoDia.slice(0,2).forEach(function(a){
+        var nm=ce("div");nm.style.cssText="font-size:8px;color:#6b7280;white-space:nowrap;overflow:hidden;text-overflow:ellipsis";
+        nm.textContent=(a.clientName||"").split(" ")[0];agsWrap.appendChild(nm);
+      });
+      if(agsDoDia.length>2){
+        var mais=ce("div");mais.style.cssText="font-size:8px;color:#C4693A;font-weight:600";mais.textContent="+"+(agsDoDia.length-2);
+        agsWrap.appendChild(mais);
+      }
+      cell.appendChild(agsWrap);
+    }
+
     (function(ds){cell.onclick=function(){window._calSelDay=ds;nav("calend")}})(dStr);
     grid.appendChild(cell)
   });
@@ -6777,7 +6954,7 @@ function rCalend(c,mk){
   var selD=new Date(selDate+"T12:00:00");
   var selLabel=selD.getDate()+" de "+MF[selD.getMonth()]+" "+selD.getFullYear();
   var txDay=allTxs.filter(function(t){return t.date===selDate});
-  var agDay=(D.agenda||[]).filter(function(a){return a.date===selDate&&a.value>0&&!a.paid&&a.status!=="cancelado"&&a.status!=="concluido"});
+  var agDay=(D.agenda||[]).filter(function(a){return a.date===selDate&&a.value>0&&!a.paid});
   var divDay=divParcelas.filter(function(p){return p.date===selDate});
 
   var detCard=ce("div","card");detCard.style.marginTop="8px";
@@ -6879,15 +7056,14 @@ function rCalend(c,mk){
 
   // Agenda items with value
   agDay.forEach(function(a){
-    var rw=ce("div","txr");
+    var sv3=statusVisual(a);
+    var rw=ce("div","txr");rw.style.cursor="pointer";
     rw.innerHTML="<div class='txi' style='background:#faeae0'>📆</div>"
-      +"<div class='txin'><div class='txd'>"+a.clientName+" - "+a.service+"</div>"
-      +"<div class='txm'>"+a.time+" · Agendamento</div></div>"
+      +"<div class='txin'><div class='txd'>"+escHTML(a.clientName)+" - "+escHTML(a.serviceRealizado||a.service||"")+"</div>"
+      +"<div class='txm'>"+escHTML(a.time||"")+(a.endTime?"–"+escHTML(a.endTime):"")+" · <span style='color:"+sv3.col+"'>"+sv3.txt+"</span></div></div>"
       +"<span class='txa' style='color:#C4693A'>"+R(a.value)+"</span>";
-    var acts=ce("div");acts.style.cssText="display:flex;gap:3px;margin-left:6px;flex-shrink:0";
-    var bxB=ce("button");bxB.style.cssText="background:#C4693A;color:#fff;font-size:10px;padding:3px 8px;border-radius:6px;border:none;cursor:pointer;font-weight:700;font-family:inherit";bxB.textContent="Baixar";
-    (function(ag){bxB.onclick=function(){oBaixarCal(Object.assign({},ag,{type:"entrada"}),true)}})(a);
-    acts.appendChild(bxB);rw.appendChild(acts);detCard.appendChild(rw)
+    (function(ag){rw.onclick=function(){oDetalheAg(ag.id)}})(a);
+    detCard.appendChild(rw)
   });
 
   c.appendChild(detCard)
@@ -8389,6 +8565,60 @@ function rAgenda(c){
 }
 function onAgCl(s){var cl=(D.clients||[]).find(function(c){return String(c.id)===String(s.value)});if(cl)gi("agcn").value=cl.name||""}
 function onAgSv(s){var sv2=(D.services||[]).find(function(x){return String(x.id)===String(s.value)});if(sv2)gi("agvl").value=sv2.price||0}
+function oNovoAgendamento(editId){
+  var agEditObj=editId?(D.agenda||[]).find(function(a){return String(a.id)===String(editId)}):null;
+  var bd=gi("m2b");bd.innerHTML="";
+  var t=ce("div","mt");t.textContent=agEditObj?"✏️ Editar agendamento":"📅 Novo agendamento";bd.appendChild(t);
+  function lbl(txt){var l=ce("label","lbl");l.textContent=txt;return l}
+
+  var agSvSel=ce("select","sel");agSvSel.id="agsv";agSvSel.style.marginBottom="8px";
+  var defOpt=ce("option");defOpt.value="";defOpt.textContent="Selecione o serviço";agSvSel.appendChild(defOpt);
+  (D.services||[]).filter(function(s){return s.active!==false}).forEach(function(sv){var o=ce("option");o.value=sv.id;o.textContent=(sv.icon||"")+" "+sv.name+(sv.price?" — "+R(sv.price):"");agSvSel.appendChild(o)});
+  bd.appendChild(lbl("Serviço"));bd.appendChild(agSvSel);
+
+  var cliSel=ce("select","sel");cliSel.id="agcl";cliSel.style.marginBottom="8px";
+  var defCl=ce("option");defCl.value="";defCl.textContent="Selecione a cliente";cliSel.appendChild(defCl);
+  (D.clients||[]).forEach(function(cl){var o=ce("option");o.value=cl.id;o.textContent=cl.name;cliSel.appendChild(o)});
+  bd.appendChild(lbl("Cliente"));bd.appendChild(cliSel);
+  var cnInp=ce("input","inp");cnInp.id="agcn";cnInp.placeholder="Ou digitar nome";cnInp.style.marginBottom="8px";bd.appendChild(cnInp);
+
+  var dtRow=ce("div","g2");dtRow.style.marginBottom="8px";
+  var dtInp=ce("input","inp");dtInp.id="agdt";dtInp.type="date";dtInp.value=window._calSelDay||hoje;dtInp.style.marginBottom="0";
+  var tmInp=ce("input","inp");tmInp.id="agtm";tmInp.type="time";tmInp.value="09:00";tmInp.style.marginBottom="0";
+  dtRow.appendChild(dtInp);dtRow.appendChild(tmInp);bd.appendChild(dtRow);
+
+  var dtRow2=ce("div","g2");dtRow2.style.marginBottom="8px";
+  var lblEnd=ce("div");lblEnd.innerHTML="<label class='lbl'>Horário final (opcional)</label>";
+  var tmEndInp=ce("input","inp");tmEndInp.id="agtm-end";tmEndInp.type="time";tmEndInp.style.marginBottom="0";
+  lblEnd.appendChild(tmEndInp);dtRow2.appendChild(lblEnd);bd.appendChild(dtRow2);
+
+  var vlInp=ce("input","inp");vlInp.id="agvl";vlInp.type="number";vlInp.placeholder="Valor (opcional)";vlInp.style.marginBottom="8px";bd.appendChild(vlInp);
+  var ntInp=ce("input","inp");ntInp.id="agnt";ntInp.placeholder="Observações (opcional)";ntInp.style.marginBottom="8px";bd.appendChild(ntInp);
+
+  var ftRow=ce("label");ftRow.style.cssText="display:flex;align-items:center;gap:8px;font-size:12px;color:#6b7280;margin-bottom:10px;cursor:pointer";
+  var ftCk=ce("input");ftCk.type="checkbox";ftCk.id="agft";ftCk.style.cssText="accent-color:#C4693A;width:14px;height:14px";
+  ftRow.appendChild(ftCk);ftRow.appendChild(document.createTextNode("Primeira visita"));bd.appendChild(ftRow);
+
+  if(agEditObj){
+    var svMatch=agEditObj.service?(D.services||[]).find(function(s){return s.name===agEditObj.service}):null;
+    agSvSel.value=svMatch?svMatch.id:"";
+    cliSel.value=agEditObj.clientId?String(agEditObj.clientId):"";
+    cnInp.value=agEditObj.clientName||"";
+    dtInp.value=agEditObj.date||hoje;
+    tmInp.value=agEditObj.time||"09:00";
+    tmEndInp.value=agEditObj.endTime||"";
+    vlInp.value=agEditObj.value||"";
+    ntInp.value=agEditObj.notes||"";
+    ftCk.checked=!!agEditObj.isFirstTime;
+  }
+
+  var brow=ce("div","brow");
+  var bc=ce("button","btn bou");bc.textContent="Cancelar";bc.onclick=function(){oM(false,"m2")};
+  var bs=ce("button","btn bpj");bs.style.flex="2";bs.textContent=agEditObj?"Salvar alterações":"+ Agendar";
+  bs.onclick=function(){svAg(editId)};
+  brow.appendChild(bc);brow.appendChild(bs);bd.appendChild(brow);
+  oM(true,"m2");
+}
 function svAg(editId){
   var svId=gi("agsv").value;
   var svObj=(D.services||[]).find(function(x){return String(x.id)===String(svId)});
@@ -8398,19 +8628,47 @@ function svAg(editId){
   var clObj=(D.clients||[]).find(function(c){return String(c.id)===String(clId)});
   var clientId=clId||"",clientName=gi("agcn").value.trim()||(clObj?clObj.name:"")||"";
   var date=gi("agdt").value,time=gi("agtm").value;
+  var endTimeEl=gi("agtm-end");
+  var endTime=endTimeEl?endTimeEl.value:"";
+  if(!endTime&&time){
+    // Sugere fim = início + duração do serviço, se cadastrada — só sugestão, editável
+    var durMin=svObj&&svObj.duration?svObj.duration:60;
+    var parts=time.split(":");var endD=new Date(2000,0,1,parseInt(parts[0]),parseInt(parts[1])+durMin);
+    endTime=String(endD.getHours()).padStart(2,"0")+":"+String(endD.getMinutes()).padStart(2,"0");
+  }
   var isFirstTime=gi("agft").checked;
   var notesEl=gi("agnt");var notes=notesEl?notesEl.value.trim():"";
+
+  // ── Conflito de horário (item 7) ────────────────────────────────
+  // novoInicio < existenteFim E novoFim > existenteInicio — ignora cancelados/faltas/removidos
+  var conflitos=(D.agenda||[]).filter(function(a){
+    if(String(a.id)===String(editId))return false; // não compara consigo mesma ao editar
+    if(a.date!==date)return false;
+    if(a.status==="cancelado"||a.status==="faltou")return false;
+    if(!a.time)return false;
+    var aEnd=a.endTime||(function(){
+      var p2=a.time.split(":");var d2=new Date(2000,0,1,parseInt(p2[0]),parseInt(p2[1])+60);
+      return String(d2.getHours()).padStart(2,"0")+":"+String(d2.getMinutes()).padStart(2,"0");
+    })();
+    return time<aEnd&&endTime>a.time;
+  });
+  if(conflitos.length){
+    var conf=conflitos[0];
+    alert("Você já possui um atendimento nesse horário.\n\nCliente: "+conf.clientName+"\nHorário: "+conf.time+(conf.endTime?"–"+conf.endTime:"")+"\nServiço: "+conf.service);
+    return;
+  }
+
   if(editId){
     // Update existing record — do not create a new one
     D.agenda=(D.agenda||[]).map(function(a){
       return String(a.id)===String(editId)
-        ? Object.assign({},a,{clientId:clientId,clientName:clientName,service:sn,value:vl,date:date,time:time,isFirstTime:isFirstTime,notes:notes})
+        ? Object.assign({},a,{clientId:clientId,clientName:clientName,service:sn,value:vl,date:date,time:time,endTime:endTime,isFirstTime:isFirstTime,notes:notes})
         : a;
     });
   }else{
-    (D.agenda=D.agenda||[]).unshift({id:Date.now(),clientId:clientId,clientName:clientName,service:sn,value:vl,date:date,time:time,isFirstTime:isFirstTime,notes:notes,status:"pendente"});
+    (D.agenda=D.agenda||[]).unshift({id:Date.now(),clientId:clientId,clientName:clientName,service:sn,value:vl,date:date,time:time,endTime:endTime,isFirstTime:isFirstTime,notes:notes,status:"pendente"});
   }
-  sv();nav("atend")
+  sv();oM(false,"m2");nav("calend")
 }
 function oEditCardP(pid){
   var p=(D.cardPurchases||[]).find(function(x){return String(x.id)===String(pid)});
@@ -9177,79 +9435,12 @@ function rAtend(c){
 
   c.appendChild(clCard);
 
-  // ── 3. NOVO AGENDAMENTO + LISTA ────────────────────────────
-  var layout=ce("div","g2");
-  var form=ce("div","card");
-  form.innerHTML="<div class='sh'><div class='st'>📅 Novo agendamento</div></div>";
-
-  // Service select
-  var svcs=D.services&&D.services.length?D.services:[{name:"Serviço",price:0}];
-  var agSvSel=ce("select","sel");agSvSel.id="agsv";agSvSel.style.marginBottom="8px";
-  var defOpt=ce("option");defOpt.value="";defOpt.textContent="Selecione o serviço";agSvSel.appendChild(defOpt);
-  svcs.forEach(function(sv){var o=ce("option");o.value=sv.id;o.textContent=(sv.icon||"")+" "+sv.name+(sv.price?" — "+R(sv.price):"");agSvSel.appendChild(o)});
-  form.appendChild(lbl("Serviço"));form.appendChild(agSvSel);
-
-  // Client select or name input
-  var cliSel=ce("select","sel");cliSel.id="agcl";cliSel.style.marginBottom="8px";
-  var defCl=ce("option");defCl.value="";defCl.textContent="Selecione a cliente";cliSel.appendChild(defCl);
-  (D.clients||[]).forEach(function(cl){var o=ce("option");o.value=cl.id;o.textContent=cl.name;cliSel.appendChild(o)});
-  form.appendChild(lbl("Cliente"));form.appendChild(cliSel);
-
-  // Manual name (if not in list)
-  var cnInp=ce("input","inp");cnInp.id="agcn";cnInp.placeholder="Ou digitar nome";cnInp.style.marginBottom="8px";form.appendChild(cnInp);
-
-  // Date + time row
-  var dtRow=ce("div","g2");dtRow.style.marginBottom="8px";
-  var dtInp=ce("input","inp");dtInp.id="agdt";dtInp.type="date";dtInp.value=hoje;dtInp.style.marginBottom="0";
-  var tmInp=ce("input","inp");tmInp.id="agtm";tmInp.type="time";tmInp.value="09:00";tmInp.style.marginBottom="0";
-  dtRow.appendChild(dtInp);dtRow.appendChild(tmInp);form.appendChild(dtRow);
-
-  // Value (optional)
-  var vlInp=ce("input","inp");vlInp.id="agvl";vlInp.type="number";vlInp.placeholder="Valor (opcional)";vlInp.style.marginBottom="8px";form.appendChild(vlInp);
-
-  // Notes (optional)
-  var ntInp=ce("input","inp");ntInp.id="agnt";ntInp.placeholder="Observações (opcional)";ntInp.style.marginBottom="8px";form.appendChild(ntInp);
-
-  // First visit checkbox
-  var ftRow=ce("label");ftRow.style.cssText="display:flex;align-items:center;gap:8px;font-size:12px;color:#6b7280;margin-bottom:10px;cursor:pointer";
-  var ftCk=ce("input");ftCk.type="checkbox";ftCk.id="agft";ftCk.style.cssText="accent-color:#C4693A;width:14px;height:14px";
-  ftRow.appendChild(ftCk);ftRow.appendChild(document.createTextNode("Primeira visita"));form.appendChild(ftRow);
-
-  var agEditId=window._agEditId||null; // set by oEditAg() before nav("atend")
-  window._agEditId=null; // consume immediately so a fresh visit to the tab starts in create mode
-  if(agEditId){
-    var agEditObj=(D.agenda||[]).find(function(a){return String(a.id)===String(agEditId)});
-    if(agEditObj){
-      var svMatch=agEditObj.service?(D.services||[]).find(function(s){return s.name===agEditObj.service}):null;
-      agSvSel.value=svMatch?svMatch.id:"";
-      cliSel.value=agEditObj.clientId?String(agEditObj.clientId):"";
-      cnInp.value=agEditObj.clientName||"";
-      dtInp.value=agEditObj.date||hoje;
-      tmInp.value=agEditObj.time||"09:00";
-      vlInp.value=agEditObj.value||"";
-      ntInp.value=agEditObj.notes||"";
-      ftCk.checked=!!agEditObj.isFirstTime;
-      form.querySelector(".st").textContent="✏️ Editar agendamento";
-    }else{
-      agEditId=null; // referenced record no longer exists — fall back to create mode
-    }
-  }
-  var agBtn=ce("button","btn bpj");agBtn.style.width="100%";
-  agBtn.textContent=agEditId?"Salvar alterações":"+ Agendar";
-  agBtn.onclick=function(){svAg(agEditId)};
-  form.appendChild(agBtn);
-  if(agEditId){
-    var cancelEditBtn=ce("button");cancelEditBtn.style.cssText="width:100%;background:none;border:none;color:#9ca3af;font-size:12px;padding:8px;cursor:pointer;font-family:inherit;margin-top:4px";
-    cancelEditBtn.textContent="Cancelar edição";
-    cancelEditBtn.onclick=function(){nav("atend")};
-    form.appendChild(cancelEditBtn);
-  }
-  layout.appendChild(form);
-
-  // Agenda list
+  // ── 3. HISTÓRICO DE AGENDAMENTOS (consulta apenas — criação e ação
+  // acontecem só pelo Calendário, esta aba não é mais ponto de baixa) ──
   var listCard=ce("div","card");
-  var agFilt="pendente";var fRow=ce("div");fRow.style.cssText="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:10px";
-  ["pendente","hoje","concluido","cancelado","todos"].forEach(function(f){
+  listCard.innerHTML="<div class='sh'><div class='st'>📋 Histórico de agendamentos</div></div>";
+  var agFilt="concluido";var fRow=ce("div");fRow.style.cssText="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:10px";
+  ["concluido","pendente","cancelado","todos"].forEach(function(f){
     var fb=ce("button","chip"+(f===agFilt?" cpj":""));fb.textContent=f.charAt(0).toUpperCase()+f.slice(1);
     fb.onclick=function(){agFilt=f;fRow.querySelectorAll(".chip").forEach(function(x){x.className="chip"});fb.className="chip cpj";renderAgList()};
     fRow.appendChild(fb)
@@ -9259,35 +9450,18 @@ function rAtend(c){
   function renderAgList(){
     var lw=gi("ag-list");if(!lw)return;lw.innerHTML="";
     var filtered=(D.agenda||[]).filter(function(a){
-      if(agFilt==="hoje")return a.date===hoje&&a.status!=="cancelado";
       if(agFilt==="todos")return true;
       return a.status===agFilt
-    }).sort(function(a,b){return a.date>b.date?1:a.date<b.date?-1:0});
+    }).sort(function(a,b){return a.date>b.date?-1:a.date<b.date?1:0}); // mais recente primeiro — é histórico
     if(!filtered.length){lw.innerHTML="<div style='text-align:center;padding:16px;color:#9ca3af;font-size:12px'>Nenhum agendamento</div>";return}
     filtered.forEach(function(ag){
       var item=ce("div","agit");item.style.marginBottom="6px";
-      item.innerHTML="<div class='agt' style='min-width:36px'>"+ag.time+"</div>"
-        +"<div class='agi'><div class='agc'>"+ag.clientName+(ag.isFirstTime?"<span class='bdg bnew' style='margin-left:4px'>NOVA</span>":"")+"</div>"
-        +"<div class='ags'>"+ag.service+" · "+ag.date+(ag.value?" · "+R(ag.value):"")+"</div></div>"
+      item.innerHTML="<div class='agt' style='min-width:36px'>"+escHTML(ag.time||"")+"</div>"
+        +"<div class='agi'><div class='agc'>"+escHTML(ag.clientName)+(ag.isFirstTime?"<span class='bdg bnew' style='margin-left:4px'>NOVA</span>":"")+"</div>"
+        +"<div class='ags'>"+escHTML(ag.serviceRealizado||ag.service||"")+" · "+escHTML(ag.date)+(ag.value?" · "+R(ag.value):"")+"</div></div>"
         +"<div class='agv'>"+R(ag.value)+"</div>";
-      var sc=ce("span","bdg "+(ag.status==="concluido"?"bdone":ag.status==="cancelado"?"bcan":"bpend"));
-      sc.textContent=ag.status==="concluido"?"OK":ag.status==="cancelado"?"X":"Pend";item.appendChild(sc);
-      if(ag.status==="pendente"){
-        var bx=ce("button","btn bpj");bx.style.cssText="font-size:11px;padding:5px 9px;margin-left:4px";bx.textContent="Baixa";
-        (function(aid){bx.onclick=function(){oBaixa(aid)}})(ag.id);item.appendChild(bx);
-        var bxc=ce("button","btn bou");bxc.style.cssText="font-size:11px;padding:5px 8px;margin-left:4px";bxc.textContent="X";
-        (function(aid){bxc.onclick=function(){
-          if(!confirm("Tem certeza que deseja cancelar este agendamento?"))return;
-          var now=new Date();
-          var cancelTime=String(now.getHours()).padStart(2,"0")+":"+String(now.getMinutes()).padStart(2,"0");
-          D.agenda=(D.agenda||[]).map(function(a){return String(a.id)===String(aid)?Object.assign({},a,{status:"cancelado",canceledAt:tod(),canceledTime:cancelTime}):a});
-          sv();renderAgList()
-        }})(ag.id);item.appendChild(bxc)
-      }
-      if(ag.status==="pendente"){
-        var bed=ce("button","btn bou");bed.style.cssText="font-size:11px;padding:5px 8px;margin-left:4px";bed.textContent="✏️";
-        (function(aid){bed.onclick=function(){oEditAg(aid)}})(ag.id);item.appendChild(bed)
-      }
+      var sc=ce("span","bdg "+(ag.status==="concluido"?"bdone":ag.status==="cancelado"?"bcan":ag.status==="faltou"?"bcan":"bpend"));
+      sc.textContent=ag.status==="concluido"?"OK":ag.status==="cancelado"?"X":ag.status==="faltou"?"Faltou":"Pend";item.appendChild(sc);
       lw.appendChild(item)
     })
   }
@@ -9330,7 +9504,7 @@ function rAtend(c){
   }
 
   // Client panel moved to its own card below
-  layout.appendChild(listCard);c.appendChild(layout);renderAgList();
+  c.appendChild(listCard);renderAgList();
   // ── CONSULTA CLIENTES — separate card ──────────────────────
   var clientsCard=ce("div","card");clientsCard.style.marginTop="10px";
   var clCardSh=ce("div","sh");
@@ -10425,8 +10599,7 @@ function showSetupPrompt(){
 }
 
 function oEditAg(id){
-  window._agEditId=id;
-  nav("atend");
+  oNovoAgendamento(id);
 }
 
 function checkPJTour(){
