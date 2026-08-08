@@ -6698,6 +6698,53 @@ function statusVisual(ag){
   return{txt:"Agendado",bg:"#f3f4f6",col:"#6b7280"};
 }
 function timeToMin(t){var p=(t||"00:00").split(":");return(parseInt(p[0])||0)*60+(parseInt(p[1])||0)}
+function rCalendDia(c){
+  var selDate=window._calSelDay||tod();
+  var d=new Date(selDate+"T12:00:00");
+  var label=["Domingo","Segunda","Terça","Quarta","Quinta","Sexta","Sábado"][d.getDay()]+", "+d.getDate()+" de "+MF[d.getMonth()];
+  c.appendChild(calNavHeader(label,function(){var nd=new Date(selDate+"T12:00:00");nd.setDate(nd.getDate()-1);window._calSelDay=nd.toISOString().slice(0,10);nav("calend")},
+    function(){var nd=new Date(selDate+"T12:00:00");nd.setDate(nd.getDate()+1);window._calSelDay=nd.toISOString().slice(0,10);nav("calend")},
+    function(){window._calSelDay=tod();nav("calend")}));
+
+  var bh=(D.pj&&D.pj.businessHours)||{};
+  var hStart=bh.start?parseInt(bh.start.split(":")[0]):7;
+  var hEnd=bh.end?parseInt(bh.end.split(":")[0]):20;
+  if(hEnd<=hStart){hStart=7;hEnd=20}
+  var hourHeight=48;
+  var totalHeight=(hEnd-hStart)*hourHeight;
+
+  var card=ce("div","card");card.style.cssText="padding:0;overflow:hidden";
+  var grid=ce("div");grid.style.cssText="display:flex";
+  var hourCol=ce("div");hourCol.style.cssText="width:48px;flex-shrink:0";
+  for(var hh=hStart;hh<hEnd;hh++){
+    var hLbl=ce("div");hLbl.style.cssText="height:"+hourHeight+"px;font-size:10.5px;color:#9ca3af;text-align:right;padding-right:6px;box-sizing:border-box;border-top:1px solid #f3f4f6";
+    hLbl.textContent=String(hh).padStart(2,"0")+":00";hourCol.appendChild(hLbl);
+  }
+  grid.appendChild(hourCol);
+
+  var body=ce("div");body.style.cssText="position:relative;flex:1;height:"+totalHeight+"px;border-left:1px solid var(--bd)";
+  for(var hi=0;hi<(hEnd-hStart);hi++){
+    var gl=ce("div");gl.style.cssText="position:absolute;top:"+(hi*hourHeight)+"px;left:0;right:0;border-top:1px solid #f3f4f6";
+    body.appendChild(gl);
+  }
+  var ags=(D.agenda||[]).filter(function(a){return a.date===selDate&&a.status!=="cancelado"});
+  ags.forEach(function(ag){
+    var startMin=timeToMin(ag.time);
+    var endMin=ag.endTime?timeToMin(ag.endTime):startMin+60;
+    var top=((startMin-hStart*60)/60)*hourHeight;
+    var height=Math.max(30,((endMin-startMin)/60)*hourHeight-2);
+    if(top<0||top>totalHeight)return;
+    var sv2=statusVisual(ag);
+    var blk=ce("div");blk.style.cssText="position:absolute;top:"+top+"px;height:"+height+"px;left:6px;right:6px;background:"+sv2.bg+";border-left:3px solid "+sv2.col+";border-radius:6px;padding:4px 8px;overflow:hidden;cursor:pointer;box-sizing:border-box";
+    blk.innerHTML="<div style='font-size:11.5px;font-weight:700;color:"+sv2.col+";line-height:1.3'>"+escHTML(ag.time||"")+(ag.endTime?"–"+escHTML(ag.endTime):"")+" · "+escHTML(ag.clientName||"—")+"</div>"
+      +"<div style='font-size:10.5px;color:#6b7280;line-height:1.3'>"+escHTML(ag.serviceRealizado||ag.service||"")+" · "+sv2.txt+"</div>";
+    (function(aid){blk.onclick=function(){oDetalheAg(aid)}})(ag.id);
+    body.appendChild(blk);
+  });
+  grid.appendChild(body);
+  card.appendChild(grid);
+  c.appendChild(card);
+}
 function rCalendSemana(c){
   var selDate=window._calSelDay||tod();
   var d=new Date(selDate+"T12:00:00");
@@ -6830,12 +6877,12 @@ function oDetalheAg(id){
 function rCalend(c,mk){
   var today=new Date();var todayStr=tod();
   if(!window._calSelDay)window._calSelDay=todayStr;
-  if(!window._calView||window._calView==="dia")window._calView="mes"; // "semana"|"mes" — visão Dia removida no Sprint 1
+  if(!window._calView)window._calView="mes"; // "dia"|"semana"|"mes"
 
   // ── Cabeçalho: seletor de visualização + novo agendamento ─────────
   var topRow=ce("div");topRow.style.cssText="display:flex;gap:6px;align-items:center;margin-bottom:8px";
   var viewSel=ce("div");viewSel.style.cssText="display:flex;background:#f3f4f6;border-radius:9px;padding:2px;flex:1";
-  [["semana","Semana"],["mes","Mês"]].forEach(function(v){
+  [["dia","Dia"],["semana","Semana"],["mes","Mês"]].forEach(function(v){
     var vb=ce("button");vb.textContent=v[1];
     var isActive=window._calView===v[0];
     vb.style.cssText="flex:1;border:none;background:"+(isActive?"#fff":"transparent")+";color:"+(isActive?"#C4693A":"#6b7280")+";font-weight:"+(isActive?"700":"500")+";font-size:12px;padding:7px 0;border-radius:7px;cursor:pointer;font-family:inherit;box-shadow:"+(isActive?"0 1px 3px rgba(0,0,0,.1)":"none");
@@ -6848,6 +6895,7 @@ function rCalend(c,mk){
   topRow.appendChild(novoBtn);
   c.appendChild(topRow);
 
+  if(window._calView==="dia"){rCalendDia(c);return}
   if(window._calView==="semana"){rCalendSemana(c);return}
   // view==="mes" continua abaixo, comportamento existente preservado
 
@@ -8693,32 +8741,46 @@ function oBaixa(id){
     alert("Este atendimento já foi concluído em "+(ag.completedAt?ag.completedAt.split("-").reverse().join("/"):"")+".");
     return;
   }
-  var pA=(D.accounts||[]).filter(function(a){return a.ctx==="pj"||a.ctx==="both"});
   var now=new Date();
   var nowTime=String(now.getHours()).padStart(2,"0")+":"+String(now.getMinutes()).padStart(2,"0");
-  var origVal=ag.value||0;
   var bd=gi("m1b");bd.innerHTML="";
 
-  // Title
   var tt=ce("div","mt");tt.textContent="Concluir atendimento";bd.appendChild(tt);
 
-  // Info bar
+  // Info bar — cliente + serviço agendado (referência, nunca alterado retroativamente)
   var info=ce("div","alrt alg");
   info.style.cssText="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px";
   info.innerHTML="<span style='font-weight:500'>"+escHTML(ag.clientName)+"</span>"
     +"<span style='color:#6b7280;font-size:12px'>Agendado: "+escHTML(ag.service)+"</span>";
   bd.appendChild(info);
 
-  // Serviço realizado — pode ser diferente do agendado; preserva os dois
-  var svcLbl=ce("label","lbl");svcLbl.style.cssText="display:block;margin-bottom:4px";svcLbl.textContent="Serviço realizado";bd.appendChild(svcLbl);
-  var svcSel=ce("select","sel");svcSel.id="bx-svc-real";svcSel.style.marginBottom="12px";
-  var svcOptsList=(D.services||[]).filter(function(s){return s.active!==false||s.name===ag.service});
-  if(!svcOptsList.some(function(s){return s.name===ag.service})){
-    // Serviço agendado não está mais na lista (renomeado/excluído) — garante que ainda apareça como opção
-    svcOptsList=svcOptsList.concat([{id:"__orig",name:ag.service}]);
+  function lbl(txt){var l=ce("label","lbl");l.style.cssText="display:block;margin-bottom:4px";l.textContent=txt;return l}
+
+  // ── Serviços realizados — múltiplos, começa com o agendado pré-preenchido ──
+  bd.appendChild(lbl("Serviços realizados"));
+  var svcOptsBase=(D.services||[]).filter(function(s){return s.active!==false});
+  var agSvcMatch=svcOptsBase.find(function(s){return s.name===ag.service});
+  if(!agSvcMatch)svcOptsBase=svcOptsBase.concat([{id:"__orig",name:ag.service,price:ag.value||0}]); // renomeado/excluído — mantém disponível
+
+  var svcRows=ce("div");svcRows.id="bx-svc-rows";bd.appendChild(svcRows);
+  function addSvcRow(preselName,preselVal){
+    var row=ce("div");row.className="bx-svc-row";row.style.cssText="display:flex;gap:6px;align-items:center;margin-bottom:6px";
+    var sel=ce("select","sel");sel.style.cssText="flex:1.4;margin-bottom:0";
+    svcOptsBase.forEach(function(s){var o=ce("option");o.value=s.name;o.dataset.price=s.price||0;o.textContent=s.name;if(s.name===preselName)o.selected=true;sel.appendChild(o)});
+    var vi=ce("input","inp");vi.type="number";vi.step="0.01";vi.style.cssText="width:90px;margin-bottom:0";
+    vi.value=(preselVal!==undefined?preselVal:(agSvcMatch&&preselName===ag.service?ag.value:(svcOptsBase.find(function(s){return s.name===preselName})||{}).price))||0;
+    sel.onchange=function(){var o=sel.options[sel.selectedIndex];vi.value=o.dataset.price||0;recalcOriginal()};
+    vi.oninput=recalcOriginal;
+    var rm=ce("button");rm.type="button";rm.textContent="✕";rm.style.cssText="background:#fee2e2;border:none;border-radius:6px;color:#dc2626;cursor:pointer;padding:8px 11px;font-size:13px;flex-shrink:0";
+    rm.onclick=function(){row.remove();recalcOriginal()};
+    row.appendChild(sel);row.appendChild(vi);row.appendChild(rm);
+    svcRows.appendChild(row);
   }
-  svcOptsList.forEach(function(s){var o=ce("option");o.value=s.name;o.textContent=s.name;if(s.name===ag.service)o.selected=true;svcSel.appendChild(o)});
-  bd.appendChild(svcSel);
+  addSvcRow(ag.service,ag.value);
+  var addSvcBtn=ce("button","btn bou");addSvcBtn.type="button";addSvcBtn.style.cssText="font-size:11.5px;padding:6px 12px;width:100%;margin-bottom:12px";
+  addSvcBtn.textContent="+ Adicionar serviço";
+  addSvcBtn.onclick=function(){addSvcRow(svcOptsBase[0]?svcOptsBase[0].name:"",0)};
+  bd.appendChild(addSvcBtn);
 
   // Date + End time row
   var row1=ce("div");
@@ -8729,394 +8791,172 @@ function oBaixa(id){
     +"<input class='inp' id='bx-end-time' type='time' value='"+nowTime+"' style='margin-bottom:0'></div>";
   bd.appendChild(row1);
 
-  // Original value reference
-  if(origVal>0){
-    var ref=ce("div");
-    ref.style.cssText="display:flex;justify-content:space-between;padding:8px 12px;background:#f0fdf4;border-radius:8px;margin-bottom:12px;border:1px solid #bbf7d0";
-    ref.innerHTML="<span style='font-size:12px;color:#15803d'>💰 Valor do serviço</span>"
-      +"<span style='font-size:14px;font-weight:500;color:#15803d'>"+R(origVal)+"</span>";
-    bd.appendChild(ref)
-  }
+  // ── Valor original (soma dos serviços — editável em caso excepcional) ──
+  bd.appendChild(lbl("Valor original"));
+  var origWrap=ce("div");origWrap.style.cssText="position:relative;margin-bottom:12px";
+  var origPrefix=ce("span");origPrefix.style.cssText="position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:13px;color:#6b7280";origPrefix.textContent="R$";
+  var origInp=ce("input","inp");origInp.id="bx-orig";origInp.type="number";origInp.step="0.01";origInp.style.cssText="padding-left:36px;margin-bottom:0;width:100%;box-sizing:border-box";
+  origWrap.appendChild(origPrefix);origWrap.appendChild(origInp);bd.appendChild(origWrap);
 
-  // Helper: format currency input on blur
-  function makeCurrencyInput(inputId, initialVal){
-    var wrap=ce("div");wrap.style.cssText="position:relative;margin-bottom:12px";
-    var prefix=ce("span");
-    prefix.style.cssText="position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:13px;color:#6b7280;pointer-events:none";
-    prefix.textContent="R$";
-    var inp=ce("input","inp");inp.id=inputId;inp.type="text";inp.inputMode="numeric";
-    inp.style.cssText="padding-left:36px;margin-bottom:0;width:100%;box-sizing:border-box";
-    inp.value=initialVal.toFixed(2).replace(".",",");
-    inp.onfocus=function(){
-      var raw=this.value.replace(/[^0-9,]/g,"").replace(",",".");
-      this.value=parseFloat(raw)||0;this.type="number";this.select()
-    };
-    inp.onblur=function(){
-      this.type="text";
-      var v=parseFloat(this.value)||0;
-      this.value=v.toFixed(2).replace(".",",")
-    };
-    wrap.appendChild(prefix);wrap.appendChild(inp);
-    return wrap
-  }
+  // ── Desconto — R$ ou % ──
+  var discWrap=ce("div");discWrap.style.cssText="border:1px solid #fed7aa;border-radius:10px;padding:10px 12px;margin-bottom:12px;background:#fff9f0";
+  var discHead=ce("label");discHead.style.cssText="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;color:#92400e;font-weight:500;margin-bottom:8px";
+  var discChk=ce("input");discChk.type="checkbox";discChk.id="bx-disc-chk";discChk.style.cssText="accent-color:#f59e0b;width:14px;height:14px";
+  discHead.appendChild(discChk);discHead.appendChild(document.createTextNode("Houve desconto neste atendimento?"));
+  discWrap.appendChild(discHead);
+  var discFields=ce("div");discFields.id="bx-disc-fields";discFields.style.display="none";
+  var discTypeRow=ce("div");discTypeRow.style.cssText="display:flex;gap:8px;margin-bottom:8px";
+  var discTypeReal=ce("button");discTypeReal.type="button";discTypeReal.id="bx-disc-type-real";discTypeReal.textContent="R$";
+  var discTypePct=ce("button");discTypePct.type="button";discTypePct.id="bx-disc-type-pct";discTypePct.textContent="%";
+  [discTypeReal,discTypePct].forEach(function(b){b.style.cssText="flex:1;padding:7px 0;border-radius:7px;border:1px solid #fde68a;background:#fff;color:#92400e;font-size:12px;cursor:pointer;font-family:inherit"});
+  discTypeRow.appendChild(discTypeReal);discTypeRow.appendChild(discTypePct);discFields.appendChild(discTypeRow);
+  var discInp=ce("input","inp");discInp.id="bx-disc";discInp.type="number";discInp.step="0.01";discInp.min="0";discInp.value="0";discInp.style.marginBottom="0";
+  discFields.appendChild(discInp);
+  discWrap.appendChild(discFields);bd.appendChild(discWrap);
 
-  // Valor recebido
-  var vlLbl=ce("label","lbl");vlLbl.style.cssText="display:block;margin-bottom:4px";vlLbl.textContent="Valor recebido";bd.appendChild(vlLbl);
-  bd.appendChild(makeCurrencyInput("bxv", origVal));
+  // ── Valor final — sempre visível ──
+  var finalBox=ce("div");finalBox.style.cssText="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:#f0fdf4;border-radius:10px;margin-bottom:12px;border:1px solid #bbf7d0";
+  finalBox.innerHTML="<span style='font-size:13px;color:#15803d;font-weight:600'>Valor final</span><span id='bx-final-display' style='font-size:18px;font-weight:700;color:#15803d'>R$ 0,00</span>";
+  bd.appendChild(finalBox);
 
-  // Discount section
-  var discWrap=ce("div");
-  discWrap.style.cssText="border:1px solid #fed7aa;border-radius:10px;padding:10px 12px;margin-bottom:12px;background:#fff9f0";
-  discWrap.innerHTML="<label style='display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;color:#92400e;font-weight:500'>"
-    +"<input type='checkbox' id='bx-disc-chk' style='accent-color:#f59e0b;width:14px;height:14px'>"
-    +"Houve desconto neste atendimento?</label>"
-    +"<div id='bx-disc-fields' style='display:none;margin-top:10px'>"
-    +"<label class='lbl' style='display:block;margin-bottom:4px'>Valor do desconto</label>"
-    +"<div style='position:relative'>"
-    +"<span style='position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:13px;color:#6b7280'>R$</span>"
-    +"<input class='inp' id='bx-disc' type='text' inputmode='numeric' value='0,00' style='padding-left:36px;margin-bottom:0'>"
-    +"</div></div>";
-  bd.appendChild(discWrap);
-
-  // Payment method
-  var payLbl=ce("label","lbl");payLbl.style.cssText="display:block;margin-bottom:4px";payLbl.textContent="Forma de pagamento";bd.appendChild(payLbl);
-  var payS=ce("select","sel");payS.id="bxp";payS.style.marginBottom="12px";
-  PAY.forEach(function(p){var o=ce("option");o.textContent=p;payS.appendChild(o)});
-  var notinhaOpt=ce("option");notinhaOpt.textContent="Notinha (parcelado com a cliente)";payS.appendChild(notinhaOpt);
-  bd.appendChild(payS);
-
-  // ── NOTINHA: parcelamento direto com a cliente, sem máquina ──────────
-  var notWrap=ce("div");notWrap.id="bx-notinha-wrap";notWrap.style.cssText="display:none;border:1px solid #fde68a;background:#fffbeb;border-radius:10px;padding:10px 12px;margin-bottom:12px";
-  var notQtdLbl=ce("label","lbl");notQtdLbl.style.cssText="display:block;margin-bottom:4px";notQtdLbl.textContent="Quantas parcelas?";notWrap.appendChild(notQtdLbl);
-  var notQtd=ce("input","inp");notQtd.id="bx-not-qtd";notQtd.type="number";notQtd.min="1";notQtd.max="24";notQtd.value="2";notQtd.style.marginBottom="8px";notWrap.appendChild(notQtd);
-  var notVencLbl=ce("label","lbl");notVencLbl.style.cssText="display:block;margin-bottom:4px";notVencLbl.textContent="Vencimento da 1ª parcela";notWrap.appendChild(notVencLbl);
-  var notVenc=ce("input","inp");notVenc.id="bx-not-venc";notVenc.type="date";notVenc.style.marginBottom="8px";notWrap.appendChild(notVenc);
-  var notPreview=ce("div");notPreview.id="bx-not-preview";notPreview.style.cssText="font-size:12px;color:#92400e;line-height:1.5";notWrap.appendChild(notPreview);
-  bd.appendChild(notWrap);
-
-  // ── MÁQUINA section: shown for Crédito / Débito / PIX via máquina ──
-  var maqData=D.maquinas||[];
-  var maqWrap=ce("div");maqWrap.id="bx-maq-wrap";
-  maqWrap.style.cssText="display:none;border-radius:10px;padding:10px 12px;margin-bottom:12px";
-  var maqTitle=ce("div");maqTitle.id="bx-maq-title";maqTitle.style.cssText="font-size:11px;font-weight:600;margin-bottom:8px";
-  maqWrap.appendChild(maqTitle);
-  if(maqData.length){
-    var maqSelLbl=ce("label","lbl");maqSelLbl.style.cssText="display:block;margin-bottom:4px";maqSelLbl.textContent="Máquina";maqWrap.appendChild(maqSelLbl);
-    var maqSel=ce("select","sel");maqSel.id="bx-maq";maqSel.style.marginBottom="8px";
-    var maqNoneOpt=ce("option");maqNoneOpt.value="";maqNoneOpt.textContent="— Selecione a máquina —";maqSel.appendChild(maqNoneOpt);
-    maqData.forEach(function(m,i){var o=ce("option");o.value=String(i);o.textContent=m.name;maqSel.appendChild(o)});
-    maqWrap.appendChild(maqSel);
-    // Parcelas — only for crédito
-    var parcelasDiv=ce("div");parcelasDiv.id="bx-parcelas-div";parcelasDiv.style.display="none";
-    var parcelasLbl=ce("label","lbl");parcelasLbl.style.cssText="display:block;margin-bottom:4px";parcelasLbl.textContent="Parcelas";
-    var parcelasSel=ce("select","sel");parcelasSel.id="bx-parcelas";parcelasSel.style.marginBottom="8px";
-    parcelasDiv.appendChild(parcelasLbl);parcelasDiv.appendChild(parcelasSel);maqWrap.appendChild(parcelasDiv);
-    // Info preview
-    var maqInfo=ce("div");maqInfo.id="bx-maq-info";
-    maqInfo.style.cssText="font-size:11px;padding:8px;border-radius:8px;display:none";maqWrap.appendChild(maqInfo)
-  }else{
-    maqWrap.innerHTML+="<div style='font-size:12px;text-align:center;padding:6px;opacity:.8'>Cadastre uma máquina em <b>Configurações</b> para taxas automáticas.</div>"
-  }
-  bd.appendChild(maqWrap);
-
-  // ── Manual account: for Dinheiro / Pix direto / Transferência ──
-  // Always build — visibility controlled by onPayChange()
-  var accWrap=ce("div");accWrap.id="bx-acc-wrap";
-  accWrap.style.cssText="display:none;margin-bottom:12px";
-  var accLbl=ce("label","lbl");accLbl.style.cssText="display:block;margin-bottom:4px;color:#374151;font-weight:500";
-  accLbl.textContent="🏦 Conta de recebimento";accWrap.appendChild(accLbl);
-  var accS=ce("select","sel");accS.id="bxac";accS.style.marginBottom="0";
-  var ao=ce("option");ao.value="";ao.textContent="— Selecione a conta —";accS.appendChild(ao);
-  if(pA.length){
-    pA.forEach(function(a){
-      var o=ce("option");o.value=a.id+"|"+a.name;
-      o.textContent=a.name+(a.bank?" · "+a.bank:"");accS.appendChild(o)
-    })
-  }else{
-    var noAccOpt=ce("option");noAccOpt.value="";noAccOpt.textContent="Cadastre contas em Configurações";accS.appendChild(noAccOpt)
-  }
-  accWrap.appendChild(accS);
-  bd.appendChild(accWrap);
-  // Immediately show/hide based on default payment (PIX = first option)
-  // PIX without machines = show account; PIX with machines = hide
-  var defaultPay=PAY[0]||"";
-  var defaultNeedsMaqImm=(defaultPay==="Cartão de Crédito"||defaultPay==="Débito"||(defaultPay==="PIX"&&maqData.length));
-  var defaultNeedsAccImm=!defaultNeedsMaqImm&&(defaultPay==="PIX"||defaultPay==="Dinheiro"||defaultPay==="Transferência"||defaultPay==="Saque");
-  accWrap.style.display=defaultNeedsAccImm?"block":"none";
-  if(maqWrap)maqWrap.style.display=defaultNeedsMaqImm?"block":"none";
-
-  // Descrição do atendimento — vira o histórico visível na ficha da cliente
-  var notasLbl=ce("label","lbl");notasLbl.style.cssText="display:block;margin-bottom:4px";notasLbl.textContent="Descrição do atendimento (opcional)";bd.appendChild(notasLbl);
+  // Observações
+  var notasLbl=ce("label","lbl");notasLbl.style.cssText="display:block;margin-bottom:4px";notasLbl.textContent="Observações do atendimento (opcional)";bd.appendChild(notasLbl);
   var notasInp=ce("textarea","inp");notasInp.id="bx-notas";notasInp.rows=3;
-  notasInp.placeholder="Ex: Tintura loiro 7.0 + matizador violeta, escova progressiva...";
+  notasInp.placeholder="Ex: Tintura loiro 7.0 + matizador violeta, cliente ficou com valor pra pagar depois...";
   notasInp.style.cssText="width:100%;box-sizing:border-box;resize:vertical;margin-bottom:12px;font-family:inherit";
   bd.appendChild(notasInp);
 
-  // Buttons
+  var noticeBox=ce("div");noticeBox.style.cssText="font-size:11px;color:#9ca3af;text-align:center;margin-bottom:10px;line-height:1.4";
+  noticeBox.textContent="O registro de pagamento (integral, parcial, parcelado ou na comanda) vem na próxima etapa. Por enquanto, isso só confirma que o atendimento aconteceu.";
+  bd.appendChild(noticeBox);
+
   var btnRow=ce("div","brow");
   var canBtn=ce("button","btn bou");canBtn.textContent="Cancelar";canBtn.onclick=function(){oM(false,"m1")};
-  var okBtn=ce("button","btn bgr");okBtn.style.flex="2";okBtn.textContent="✓ Confirmar";
+  var okBtn=ce("button","btn bgr");okBtn.style.flex="2";okBtn.textContent="✓ Confirmar conclusão";
   okBtn.onclick=function(){svBaixa(id)};
   btnRow.appendChild(canBtn);btnRow.appendChild(okBtn);bd.appendChild(btnRow);
 
-  // Wire interactivity after DOM is ready
-  setTimeout(function(){
-    var chk=gi("bx-disc-chk");var dFields=gi("bx-disc-fields");
-    var dInp=gi("bx-disc");var vInp=gi("bxv");
-    if(chk)chk.onchange=function(){
-      dFields.style.display=this.checked?"block":"none";
-      if(!this.checked){
-        if(dInp){dInp.type="text";dInp.value="0,00"}
-        if(vInp){vInp.type="text";vInp.value=origVal.toFixed(2).replace(".",",")}
-      }
-    };
-    if(dInp){
-      dInp.onfocus=function(){var r=this.value.replace(",",".");this.type="number";this.value=parseFloat(r)||0;this.select()};
-      dInp.onblur=function(){this.type="text";var v=parseFloat(this.value)||0;this.value=v.toFixed(2).replace(".",",");
-        var final=Math.max(0,origVal-v);if(vInp){vInp.type="text";vInp.value=final.toFixed(2).replace(".",",")}};
-    }
-    // ── Payment routing logic ──────────────────────────────────
-    var payEl=gi("bxp");
-    var maqWrapEl=gi("bx-maq-wrap");var accWrapEl=gi("bx-acc-wrap");
-    var maqTitleEl=gi("bx-maq-title");
-    var parcelasDivEl=gi("bx-parcelas-div");
-    var maqEl=gi("bx-maq");var parcelasEl=gi("bx-parcelas");
-    var maqInfoEl=gi("bx-maq-info");
-
-    function onPayChange(){
-      var pay=payEl?payEl.value:"";
-      var isCredit=pay==="Cartão de Crédito";
-      var isDebit=pay==="Débito";
-      var isPix=pay==="PIX";
-      var isNotinha=pay==="Notinha (parcelado com a cliente)";
-      // Machine is used for: Crédito, Débito, PIX via máquina (when machines exist)
-      var needsMaq=(isCredit||isDebit||(isPix&&maqData.length))&&!isNotinha;
-      // Manual account needed when NOT using machine
-      // PIX direto (no machines), Dinheiro, Transferência, Saque
-      var needsManualAcc=((isPix&&!maqData.length)||pay==="Dinheiro"||pay==="Transferência"||pay==="Saque")&&!isNotinha;
-
-      var notWrapEl=gi("bx-notinha-wrap");
-      if(notWrapEl)notWrapEl.style.display=isNotinha?"block":"none";
-      if(isNotinha){
-        var vEl=gi("bx-not-venc");
-        if(vEl&&!vEl.value){var d30=new Date();d30.setDate(d30.getDate()+30);vEl.value=d30.toISOString().slice(0,10)}
-        atualizarPreviewNotinha();
-      }
-
-      // Show/hide machine section
-      if(maqWrapEl){
-        maqWrapEl.style.display=needsMaq?"block":"none";
-        if(needsMaq){
-          if(isCredit){
-            maqWrapEl.style.background="#f2f6f1";maqWrapEl.style.border="1px solid #c5d9c2";
-            if(maqTitleEl){maqTitleEl.style.color="#4A6741";maqTitleEl.textContent="💳 Cartão de crédito — selecione a máquina"}
-            if(parcelasDivEl)parcelasDivEl.style.display="block"
-          }else if(isDebit){
-            maqWrapEl.style.background="#eff6ff";maqWrapEl.style.border="1px solid #bfdbfe";
-            if(maqTitleEl){maqTitleEl.style.color="#1d4ed8";maqTitleEl.textContent="💳 Débito — selecione a máquina"}
-            if(parcelasDivEl)parcelasDivEl.style.display="none"
-          }else{
-            maqWrapEl.style.background="#f0fdf4";maqWrapEl.style.border="1px solid #bbf7d0";
-            if(maqTitleEl){maqTitleEl.style.color="#15803d";maqTitleEl.textContent="📲 PIX via máquina — selecione a máquina"}
-            if(parcelasDivEl)parcelasDivEl.style.display="none"
-          }
-        }
-        if(maqInfoEl)maqInfoEl.style.display="none"
-      }
-      // Show/hide manual account — AFTER machine section, no override
-      if(accWrapEl)accWrapEl.style.display=needsManualAcc?"block":"none";
-    }
-    function atualizarPreviewNotinha(){
-      var prev=gi("bx-not-preview");if(!prev)return;
-      var qtd=parseInt(gi("bx-not-qtd")?gi("bx-not-qtd").value:1)||1;
-      var rawV=(gi("bxv")?gi("bxv").value:"0").toString().replace(",",".");
-      var total=parseFloat(rawV)||0;
-      var valorParc=qtd>0?total/qtd:total;
-      prev.textContent=qtd+"x de "+R(valorParc)+" · total "+R(total);
-    }
-    var _notQtdEl=gi("bx-not-qtd");if(_notQtdEl)_notQtdEl.oninput=atualizarPreviewNotinha;
-    var _bxvEl=gi("bxv");if(_bxvEl)_bxvEl.addEventListener("input",atualizarPreviewNotinha);
-
-    if(payEl){payEl.onchange=onPayChange;onPayChange()}
-
-    function updateMaqInfo(){
-      if(!maqEl||!maqInfoEl)return;
-      var mIdx=parseInt(maqEl.value);var maq=maqData[mIdx];
-      if(!maq||isNaN(mIdx)){maqInfoEl.style.display="none";return}
-      var pay=payEl?payEl.value:"";
-      var isCredit=pay==="Cartão de Crédito";
-      var rawV=(gi("bxv")?gi("bxv").value:"0").replace(",",".");
-      var bruto=parseFloat(rawV)||origVal;
-      var taxa=0;var parcN=1;
-      if(isCredit&&parcelasEl&&parcelasEl.value){
-        var pv=parcelasEl.value.split("|");parcN=parseInt(pv[0]);taxa=parseFloat(pv[1])||0
-      }else if(pay==="Débito"){
-        taxa=maq.taxaDebito||0
-      }else if(pay==="PIX"){
-        taxa=maq.taxaPix||0
-      }
-      var liquido=bruto*(1-taxa/100);var taxaVal=bruto*taxa/100;
-      // Auto-select account from machine
-      var accEl=gi("bxac");
-      if(accEl&&maq.accountId){
-        Array.from(accEl.options||[]).forEach(function(o){
-          if(o.value.split("|")[0]===String(maq.accountId))accEl.value=o.value
-        })
-      }
-      // Show info
-      maqInfoEl.style.display="block";
-      var col=pay==="Cartão de Crédito"?"#344d2e":pay==="Débito"?"#1d4ed8":"#15803d";
-      maqInfoEl.style.background=pay==="Cartão de Crédito"?"#eaf0e8":pay==="Débito"?"#dbeafe":"#dcfce7";
-      maqInfoEl.style.color=col;
-      var parcStr=isCredit&&parcN>1?parcN+"x":"à vista";
-      var taxaStr=taxa>0?taxa+"% = -"+R(taxaVal):"sem taxa";
-      maqInfoEl.innerHTML="<b>"+escHTML(maq.name)+"</b> · "+parcStr+" · "+taxaStr
-        +"<div style='margin-top:4px;display:flex;gap:12px;flex-wrap:wrap'>"
-        +(taxa>0?"<span>Bruto: "+R(bruto)+"</span><span>Taxa: -"+R(taxaVal)+"</span>":"")
-        +"<span style='font-weight:600'>Líquido: "+R(liquido)+"</span></div>"
-        +(maq.accountName?"<div style='margin-top:4px;opacity:.8'>→ Conta: "+maq.accountName+"</div>":"")
-    }
-
-    // Wire machine selector
-    if(maqEl){
-      maqEl.onchange=function(){
-        var mIdx=parseInt(this.value);var maq=maqData[mIdx];
-        if(!maq||isNaN(mIdx))return;
-        var pay=payEl?payEl.value:"";
-        if(pay==="Cartão de Crédito"&&parcelasEl){
-          parcelasEl.innerHTML="<option value='1|"+(maq.taxaCredito||0)+"'>À vista — "+(maq.taxaCredito||0)+"% (líq. "+R(origVal*(1-(maq.taxaCredito||0)/100))+")</option>";
-          (maq.parcelas||[]).forEach(function(p){
-            var liq=origVal*(1-p.taxa/100);
-            var o=ce("option");o.value=p.n+"|"+p.taxa;o.textContent=p.n+"x — "+p.taxa+"% (líq. "+R(liq)+")";parcelasEl.appendChild(o)
-          });
-          parcelasEl.onchange=updateMaqInfo
-        }
-        updateMaqInfo()
-      }
-    }
-    if(parcelasEl)parcelasEl.onchange=updateMaqInfo;
-  },80);
-
-  oM(true,"m1")
+  // ── Interatividade ──────────────────────────────────────────
+  var discType="real"; // "real"|"pct"
+  function recalcOriginal(){
+    var soma=0;
+    svcRows.querySelectorAll(".bx-svc-row").forEach(function(r){
+      var vi=r.querySelector("input[type=number]");soma+=parseFloat(vi.value)||0;
+    });
+    origInp.value=soma.toFixed(2);
+    recalcFinal();
+  }
+  function recalcFinal(){
+    var orig=parseFloat(origInp.value)||0;
+    var discRaw=discChk.checked?(parseFloat(discInp.value)||0):0;
+    var discValorReais=discType==="pct"?orig*(Math.min(100,Math.max(0,discRaw))/100):Math.min(orig,Math.max(0,discRaw));
+    var final=Math.max(0,orig-discValorReais);
+    gi("bx-final-display").textContent=R(final);
+  }
+  origInp.oninput=recalcFinal;
+  discChk.onchange=function(){discFields.style.display=this.checked?"block":"none";recalcFinal()};
+  discInp.oninput=recalcFinal;
+  discTypeReal.onclick=function(){discType="real";discTypeReal.style.background="#f59e0b";discTypeReal.style.color="#fff";discTypePct.style.background="#fff";discTypePct.style.color="#92400e";recalcFinal()};
+  discTypePct.onclick=function(){discType="pct";discTypePct.style.background="#f59e0b";discTypePct.style.color="#fff";discTypeReal.style.background="#fff";discTypeReal.style.color="#92400e";recalcFinal()};
+  discTypeReal.onclick();
+  recalcOriginal();
+  oM(true,"m1");
 }
 function svBaixa(id){
   var ag=(D.agenda||[]).find(function(a){return String(a.id)===String(id)});if(!ag)return;
   // Idempotência: se já foi concluído (por qualquer uma das duas telas, ou
-  // clique duplo), não cria receita nova, não mexe em indicadores, não
+  // clique duplo), não cria fotografia nova, não mexe em indicadores, não
   // duplica nada. Só fecha o modal e avisa.
   if(ag.status==="concluido"){
     oM(false,"m1");
     alert("Este atendimento já foi concluído em "+(ag.completedAt?ag.completedAt.split("-").reverse().join("/"):"")+".");
-    nav("atend");
+    nav("calend");
     return;
   }
-  var rawV=(gi("bxv")?gi("bxv").value:"0").toString().replace(",",".");var vl=parseFloat(rawV)||ag.value||0;
-  var rawD=(gi("bx-disc")?gi("bx-disc").value:"0").toString().replace(",",".");var discountAmt=parseFloat(rawD)||0;
+
+  // ── Serviços realizados (fotografia — preços não dependem do cadastro atual) ──
+  var performedServices=[];
+  document.querySelectorAll("#bx-svc-rows .bx-svc-row").forEach(function(r){
+    var sel=r.querySelector("select");var vi=r.querySelector("input[type=number]");
+    var svcObj=(D.services||[]).find(function(s){return s.name===sel.value});
+    performedServices.push({serviceId:svcObj?svcObj.id:null,name:sel.value,value:parseFloat(vi.value)||0});
+  });
+  if(!performedServices.length){alert("Adicione ao menos um serviço realizado.");return}
+
+  var originalVal=parseFloat(gi("bx-orig").value)||0;
   var discountChecked=gi("bx-disc-chk")?gi("bx-disc-chk").checked:false;
-  var originalVal=ag.value||0;
-  if(!discountChecked)discountAmt=0;
-  // Account: manual (Dinheiro/Pix/Transferência) OR from machine (Crédito/Débito/Pix máquina)
-  var payMethod2=gi("bxp")?gi("bxp").value:"";
-  var maqIdx3=gi("bx-maq")?parseInt(gi("bx-maq").value):NaN;
-  var maqObj3=!isNaN(maqIdx3)?(D.maquinas||[])[maqIdx3]:null;
-  var manualAccV=gi("bxac")?gi("bxac").value:"";
-  var ap;
-  if(manualAccV){
-    ap=manualAccV.split("|")
-  }else if(maqObj3&&maqObj3.accountId){
-    ap=[String(maqObj3.accountId),maqObj3.accountName||""]
-  }else{
-    ap=["",""]
+  var discType=gi("bx-disc-type-pct")&&gi("bx-disc-type-pct").style.background.indexOf("245, 158, 11")>-1?"pct":"real";
+  var discRaw=discountChecked?(parseFloat(gi("bx-disc").value)||0):0;
+  var discountPercent=0,discountValue=0;
+  if(discountChecked){
+    if(discType==="pct"){
+      if(discRaw<0||discRaw>100){alert("O desconto percentual precisa ficar entre 0 e 100.");return}
+      discountPercent=discRaw;discountValue=Math.round(originalVal*(discRaw/100)*100)/100;
+    }else{
+      if(discRaw<0){alert("O desconto não pode ser negativo.");return}
+      if(discRaw>originalVal){alert("O desconto não pode ser maior que o valor original.");return}
+      discountValue=discRaw;
+    }
   }
-  var svcRealizado=gi("bx-svc-real")?gi("bx-svc-real").value:ag.service;
-  var catN=svcRealizado||ag.service||((D.inCats||[])[0]?D.inCats[0].name:"Atendimento");
+  var finalValue=Math.max(0,Math.round((originalVal-discountValue)*100)/100);
+
+  var scheduledSvcObj=(D.services||[]).find(function(s){return s.name===ag.service});
+  var performedServiceName=performedServices[0].name; // primeiro/principal — mantém compatibilidade com serviceRealizado
+
   var endTime=gi("bx-end-time")?gi("bx-end-time").value:"";
   var endDate=gi("bx-end-date")?gi("bx-end-date").value:tod();
-  // Calculate duration in minutes
   var durationMin=0;
   if(ag.time&&endTime){
     var startParts=ag.time.split(":");var endParts=endTime.split(":");
     durationMin=(parseInt(endParts[0])*60+parseInt(endParts[1]))-(parseInt(startParts[0])*60+parseInt(startParts[1]));
     if(durationMin<0)durationMin+=1440
   }
-  // Machine / taxa data for all payment types
-  var maqIdx=gi("bx-maq")?parseInt(gi("bx-maq").value):NaN;
-  var maqData2=D.maquinas||[];var maqObj=!isNaN(maqIdx)?maqData2[maqIdx]:null;
-  var parcN=1;var taxaPct=0;
-  if(maqObj){
-    var pm=payMethod2||"";
-    if(pm==="Cartão de Crédito"){
-      var parcelasV=gi("bx-parcelas")&&gi("bx-parcelas").value?gi("bx-parcelas").value.split("|"):null;
-      parcN=parcelasV?parseInt(parcelasV[0]):1;taxaPct=parcelasV?parseFloat(parcelasV[1]):0
-    }else if(pm==="Débito"){
-      taxaPct=maqObj.taxaDebito||0
-    }else if(pm==="PIX"){
-      taxaPct=maqObj.taxaPix||0  // 0 if not set = no machine fee
-    }
-  }
-  var vlLiquido=vl*(1-taxaPct/100);
-  var payMethodSel=gi("bxp")?gi("bxp").value:"";
-  var isNotinha=payMethodSel==="Notinha (parcelado com a cliente)";
-  var tx;
-  if(isNotinha){
-    var notQtdVal=Math.max(1,parseInt(gi("bx-not-qtd")?gi("bx-not-qtd").value:1)||1);
-    var notVencVal=gi("bx-not-venc")?gi("bx-not-venc").value:endDate;
-    var valorParc=Math.round((vl/notQtdVal)*100)/100;
-    var notinhaSeed="notinha-"+Date.now();
-    var parcelasTx=[];
-    for(var pi=0;pi<notQtdVal;pi++){
-      var dVenc=new Date(notVencVal+"T00:00:00");dVenc.setMonth(dVenc.getMonth()+pi);
-      var dVencStr=dVenc.toISOString().slice(0,10);
-      var ajusteCentavos=(pi===notQtdVal-1)?Math.round((vl-valorParc*(notQtdVal-1))*100)/100:valorParc;
-      parcelasTx.push({id:Date.now()+pi,type:"entrada",category:catN,cat:catN,amount:ajusteCentavos,clients:pi===0?1:0,
-        description:svcRealizado+" — "+ag.clientName+" (parcela "+(pi+1)+"/"+notQtdVal+")",
-        payMethod:"Notinha",accountId:"",accountName:"",
-        isFirstTime:ag.isFirstTime,date:dVencStr,pending:dVencStr>tod(),
-        service:svcRealizado,clientId:ag.clientId,clientName:ag.clientName,
-        originalValue:originalVal,discount:pi===0?discountAmt:0,finalValue:ajusteCentavos,
-        vlLiquido:ajusteCentavos,notinhaSeed:notinhaSeed,parcelaAtual:pi+1,parcelasTotal:notQtdVal});
-    }
-    parcelasTx.forEach(function(p){(D.pj.transactions=D.pj.transactions||[]).unshift(p)});
-    tx=parcelasTx[0]; // referência representativa — usada abaixo pra atualizar agenda/histórico
-  }else{
-    tx={id:Date.now(),type:"entrada",category:catN,cat:catN,amount:vl,clients:1,
-      description:svcRealizado+" — "+ag.clientName+(discountAmt>0?" (desc. "+R(discountAmt)+")":""),
-      payMethod:payMethodSel,
-      accountId:ap[0]||(maqObj?String(maqObj.accountId||""):""),
-      accountName:ap[1]||(maqObj?maqObj.accountName||"":""),
-      isFirstTime:ag.isFirstTime,date:endDate,durationMin:durationMin,
-      service:svcRealizado,clientId:ag.clientId,clientName:ag.clientName,
-      originalValue:originalVal,discount:discountAmt,finalValue:vl,
-      vlLiquido:vlLiquido,maquina:maqObj?maqObj.name:"",
-      parcelas:parcN,taxaMaquina:taxaPct,taxaValor:maqObj?vl-vlLiquido:0};
-    (D.pj.transactions=D.pj.transactions||[]).unshift(tx);
-  }
-  // Update client visit history
+  var notasVal=gi("bx-notas")?gi("bx-notas").value.trim():"";
+
+  // Atualiza estatísticas de visita da cliente — não é entrada financeira,
+  // é sobre o trabalho realizado (ltv aqui reflete faturamento, não caixa).
   if(ag.clientId){
     D.clients=(D.clients||[]).map(function(cl){
       if(String(cl.id)!==String(ag.clientId))return cl;
       var visits=(cl.visits||0)+1;
       var lastVisit=endDate;
       var visitDates=(cl.visitDates||[]).concat([endDate]).slice(-24);
-      // Calculate avg interval
       var avgInterval=0;
       if(visitDates.length>1){
         var totalDays=0;
-        for(var i=1;i<visitDates.length;i++){
-          totalDays+=(new Date(visitDates[i])-new Date(visitDates[i-1]))/86400000
-        }
+        for(var i=1;i<visitDates.length;i++)totalDays+=(new Date(visitDates[i])-new Date(visitDates[i-1]))/86400000;
         avgInterval=Math.round(totalDays/(visitDates.length-1))
       }
-      // LTV = total spent across all transactions
-      var ltv=(D.pj.transactions||[]).filter(function(t){return String(t.clientId)===String(ag.clientId)&&t.type==="entrada"}).reduce(function(s,t){return s+t.amount},vl);
+      var ltv=(cl.ltv||0)+finalValue;
       return Object.assign({},cl,{visits:visits,lastVisit:lastVisit,visitDates:visitDates,avgInterval:avgInterval,ltv:ltv})
     })
   }
-  var notasVal=gi("bx-notas")?gi("bx-notas").value.trim():"";
-  D.agenda=(D.agenda||[]).map(function(a){return String(a.id)===String(id)?Object.assign({},a,{status:"concluido",completedAt:endDate,completedTime:endTime,durationMin:durationMin,notas:notasVal,transactionId:tx.id,completionId:"cpl-"+id+"-"+tx.id,completedFrom:tab==="atend"?"atendimentos":"calendario",serviceRealizado:svcRealizado}):a});
-  sv();oM(false,"m1");nav("atend")
+
+  // ── Fotografia imutável do atendimento (item 8) — sem criar transação
+  // financeira nesta sprint, como exigido explicitamente ──
+  D.agenda=(D.agenda||[]).map(function(a){
+    if(String(a.id)!==String(id))return a;
+    return Object.assign({},a,{
+      status:"concluido",
+      completedAt:endDate,completedTime:endTime,durationMin:durationMin,
+      completionId:"cpl-"+id+"-"+Date.now(),
+      completedFrom:tab==="atend"?"atendimentos":"calendario",
+      scheduledServiceId:scheduledSvcObj?scheduledSvcObj.id:null,
+      scheduledServiceName:ag.service,
+      performedServices:performedServices,
+      performedServiceId:performedServices[0].serviceId,
+      performedServiceName:performedServiceName,
+      serviceRealizado:performedServiceName, // compatibilidade com leituras antigas
+      originalValue:originalVal,
+      discountType:discountChecked?discType:null,
+      discountValue:discountValue,
+      discountPercent:discountPercent,
+      finalValue:finalValue,
+      notas:notasVal
+    });
+  });
+  sv();oM(false,"m1");nav("calend")
 }
-// ── Ficha da cliente — histórico de atendimentos concluídos ──────────────
 // ── Editar cliente (contexto Atendimentos/PJ) — campos próprios, nunca mistura
 // com o formulário de Clientes da PF (que usa nomes de campo diferentes) ──
 function oEditCliAtend(cl){
