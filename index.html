@@ -1145,12 +1145,19 @@ async function syncFromCloud(){
       if(localStamp&&cloudStamp){
         shouldAdoptCloud=cloudStamp>localStamp;
       }else{
-        var localTxCount=(D.pf.transactions||[]).length+(D.pj.transactions||[]).length;
-        var cloudTxCount=((cloud.pf&&cloud.pf.transactions)||[]).length+((cloud.pj&&cloud.pj.transactions)||[]).length;
-        shouldAdoptCloud=cloudTxCount>=localTxCount;
+        // Sprint 2: contagem de transações não serve mais de critério — elas não
+        // são mais controladas por este snapshot. Sem timestamp confiável dos
+        // dois lados, por segurança NÃO adota a nuvem (evita sobrescrever local
+        // sem necessidade real).
+        shouldAdoptCloud=false;
       }
       if(shouldAdoptCloud){
+        // Preserva as transações PF/PJ locais — sua fonte de verdade agora é
+        // pullTransactions()/mergeTransactionsById(), nunca este snapshot antigo.
+        var localPfTx=D.pf.transactions,localPjTx=D.pj.transactions;
         Object.keys(cloud).forEach(function(k){D[k]=cloud[k]});
+        D.pf.transactions=localPfTx;
+        D.pj.transactions=localPjTx;
         ls_set(dk(),JSON.stringify(D));// save merged data locally without re-stamping (preserve cloud's timestamp)
         if(typeof nav==="function")nav(tab);
       }
@@ -1162,6 +1169,7 @@ async function syncFromCloud(){
   // de D seja confirmado no servidor — cobre o caso de haver uma mudança local pendente
   // que nunca chegou a ser salva (ex: sessão anterior fechada no meio de um envio).
   triggerSyncPush();
+  pullTransactions(); // Sprint 2 — transações PF/PJ sincronizam por fora deste fluxo
 }
 // ── Coordenação entre abas do mesmo navegador ─────────────────────────────────
 // _syncInFlight/_syncDirty só existem na memória desta aba. Duas abas da mesma
@@ -1636,6 +1644,100 @@ function showSyncPopup(text,showRefreshBtn){
   },50);
 }
 
+// ══════════════════════════════════════════════════════════════
+// SPRINT 2 — Sincronização por entidade para transações PF/PJ.
+// A partir de agora, transactions_pf/transactions_pj são a fonte de
+// verdade — o snapshot antigo (lucrei_data) não controla mais essas
+// duas entidades (ver sv() e syncFromCloud(), ajustados abaixo).
+// ══════════════════════════════════════════════════════════════
+function genUUID(){
+  if(window.crypto&&crypto.randomUUID)return crypto.randomUUID();
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,function(c){
+    var r=Math.random()*16|0,v=c==='x'?r:(r&0x3|0x8);return v.toString(16)
+  });
+}
+
+// ── Fila offline de operações pendentes ───────────────────────────
+// Cada operação guarda seu próprio operationId — um retry SEMPRE
+// reusa o mesmo, nunca gera um novo (é isso que torna o retry seguro).
+function getSyncQueue(){try{return JSON.parse(ls_get("lc-sync-queue")||"[]")}catch(e){return[]}}
+function saveSyncQueue(q){ls_set("lc-sync-queue",JSON.stringify(q))}
+function queueSyncOp(entityType,entityId,operation,payload){
+  var q=getSyncQueue();
+  q.push({operationId:genUUID(),deviceId:_deviceId,entityType:entityType,entityId:entityId,operation:operation,payload:payload||null,queuedAt:new Date().toISOString()});
+  saveSyncQueue(q);
+}
+
+var _syncQueueProcessing=false;
+// Só remove da fila depois de applied/duplicate confirmado pelo servidor —
+// nunca antes. Para no primeiro erro real (mantém ordem, tenta de novo no
+// próximo ciclo em vez de pular operações).
+async function processSyncQueue(){
+  if(_syncQueueProcessing||!navigator.onLine||!_email)return;
+  _syncQueueProcessing=true;
+  try{
+    var queue=getSyncQueue();
+    for(var i=0;i<queue.length;i++){
+      var op=queue[i];
+      try{
+        var res=await apiCall("/api/sync/push",{method:"POST",body:{
+          operationId:op.operationId,deviceId:op.deviceId,entityType:op.entityType,
+          entityId:op.entityId,operation:op.operation,payload:op.payload
+        }});
+        if(res.ok&&(res.data.applied||res.data.duplicate)){
+          saveSyncQueue(getSyncQueue().filter(function(o){return o.operationId!==op.operationId}));
+        }else{
+          break; // erro real — mantém na fila, tenta de novo depois
+        }
+      }catch(e){break}
+    }
+  }finally{
+    _syncQueueProcessing=false;
+  }
+}
+
+// Cria/edita/exclui UMA transação PF ou PJ. Nunca envia o array inteiro.
+function pushTransactionOp(scope,entityId,operation,payload){
+  queueSyncOp(scope==="pf"?"transactions_pf":"transactions_pj",String(entityId),operation,payload);
+  processSyncQueue();
+}
+
+// ── Pull incremental — mescla por ID, nunca substitui o array inteiro ──
+var _lastTxSync=ls_get("lc-last-tx-sync")||null;
+async function pullTransactions(){
+  if(!_email)return;
+  try{
+    var qs=_lastTxSync?("?since="+encodeURIComponent(_lastTxSync)):"";
+    var res=await apiCall("/api/sync/pull"+qs,{method:"GET"});
+    if(!res.ok)return;
+    mergeTransactionsById("pf",(res.data.data&&res.data.data.transactions_pf)||[]);
+    mergeTransactionsById("pj",(res.data.data&&res.data.data.transactions_pj)||[]);
+    _lastTxSync=res.data.serverTime;
+    ls_set("lc-last-tx-sync",_lastTxSync);
+  }catch(e){}
+}
+function mergeTransactionsById(scope,serverItems){
+  if(!serverItems.length)return;
+  var arr=(scope==="pf"?D.pf.transactions:D.pj.transactions)||[];
+  var byId={};arr.forEach(function(t){byId[String(t.id)]=t});
+  serverItems.forEach(function(item){
+    if(item.deleted_at){
+      delete byId[String(item.id)]; // tombstone — some localmente também
+    }else{
+      byId[String(item.id)]=Object.assign({},item.data,{id:item.id});
+    }
+  });
+  var merged=Object.keys(byId).map(function(k){return byId[k]});
+  if(scope==="pf")D.pf.transactions=merged;else D.pj.transactions=merged;
+  ls_set(dk(),JSON.stringify(D));
+  if(typeof nav==="function"&&typeof tab!=="undefined")nav(tab);
+}
+
+// ── Pull automático: 12s, ao voltar pra aba, ao reconectar, pós-save ──
+setInterval(function(){pullTransactions();processSyncQueue()},12000);
+document.addEventListener("visibilitychange",function(){if(!document.hidden)pullTransactions()});
+window.addEventListener("online",function(){processSyncQueue();pullTransactions()});
+
 function sv(){
   if(!_email)return;
   ls_set(dk(),JSON.stringify(D)); // cache local imediato — isto NÃO é confirmação de sincronização
@@ -1662,7 +1764,16 @@ function triggerSyncPush(bypassConflictGuard){
   if(!navigator.onLine){setSyncStatus("sem_conexao");return Promise.resolve({ok:false,offline:true})}
   _syncInFlight=true;_syncDirty=false;
   setSyncStatus("salvando");
-  var snapshot=JSON.stringify(D); // captura o estado exato no momento do envio
+  // A partir do Sprint 2, transações PF/PJ não são mais controladas pelo
+  // snapshot antigo — vão exclusivamente por /api/sync/push. Envia uma
+  // cópia rasa com essas duas listas zeradas, sem alterar o D local de
+  // verdade (a tela continua lendo D.pf.transactions/D.pj.transactions
+  // normalmente — só o que sobe pro snapshot antigo que muda).
+  var snapshotObj=Object.assign({},D,{
+    pf:Object.assign({},D.pf,{transactions:[]}),
+    pj:Object.assign({},D.pj,{transactions:[]})
+  });
+  var snapshot=JSON.stringify(snapshotObj); // captura o estado exato no momento do envio, sem as transações
   var baseRevision=D._rev||0;
   return (async function(){
     var ok=false,conflict=false,newRev=null,currentRevision=null,errMsg=null;
@@ -2877,6 +2988,7 @@ function delTx(p,id){
   var sid=String(id);
   if(p==="pf")D.pf.transactions=(D.pf.transactions||[]).filter(function(t){return String(t.id)!==sid});
   else D.pj.transactions=(D.pj.transactions||[]).filter(function(t){return String(t.id)!==sid});
+  pushTransactionOp(p,sid,"delete",null);
   // Cascade: remove linked investment entries
   D.investments=(D.investments||[]).filter(function(inv){
     return String(inv.srcTxId)!==sid&&String(inv.id)!==sid
@@ -3206,7 +3318,7 @@ function svLanc(tp,isPF,cats,cls,pA,pC){
   var av=avEl&&!isCard&&!isCash?avEl.value:"";var ap=av.split("|");
   var cardId=isCard&&gi("lcard")?gi("lcard").value:"";
   var date=gi("l-date")?gi("l-date").value:tod();
-  var id=Date.now();
+  var id=genUUID();
   var desc=gi("ld")?gi("ld").value:"";
 
   // Investment category in PF expense → redirect to investment flow
@@ -3277,14 +3389,16 @@ function svLanc(tp,isPF,cats,cls,pA,pC){
   if(date>tod())tx.pending=true;
   if(isPF)(D.pf.transactions=D.pf.transactions||[]).unshift(tx);
   else(D.pj.transactions=D.pj.transactions||[]).unshift(tx);
+  pushTransactionOp(isPF?"pf":"pj",tx.id,"create",tx);
   // Só o campo recorrência cria lançamento futuro — nunca o fixa/variável
   // sozinho. Gera apenas a PRÓXIMA ocorrência (não um calendário inteiro de
   // uma vez), como pendente, até ela mesma ser confirmada/editada.
   if(recorrencia&&recorrencia!=="nao_recorrente"){
     var nextDate=proximaDataRecorrencia(date,recorrencia);
     if(nextDate){
-      var nextTx=Object.assign({},tx,{id:Date.now()+1,date:nextDate,pending:true,recurringSeed:recSeed});
+      var nextTx=Object.assign({},tx,{id:genUUID(),date:nextDate,pending:true,recurringSeed:recSeed});
       if(isPF)D.pf.transactions.unshift(nextTx);else D.pj.transactions.unshift(nextTx);
+      pushTransactionOp(isPF?"pf":"pj",nextTx.id,"create",nextTx);
     }
   }
   sv();oM(false,"m1");nav("dash")
@@ -5568,11 +5682,13 @@ function svPay(cd,totalFatura){
 
   // Debit from account
   if(ap[0]&&amt>0){
-    var tx={id:Date.now()+1,type:"saida",category:"Fatura Cartão",cat:"Fatura Cartão",amount:amt,
+    var tx={id:genUUID(),type:"saida",category:"Fatura Cartão",cat:"Fatura Cartão",amount:amt,
       description:"Pgto fatura "+cd.name+" "+MF[vm]+"/"+vy+(isPartial?" (parcial)":""),
       payMethod:"Débito",accountId:ap[0],accountName:ap[1]||"",date:payDate,fixed:false};
+    var _payScope=panel==="pj"?"pj":"pf";
     if(panel==="pj")(D.pj.transactions=D.pj.transactions||[]).unshift(tx);
     else(D.pf.transactions=D.pf.transactions||[]).unshift(tx)
+    pushTransactionOp(_payScope,tx.id,"create",tx);
   }
 
   if(isPartial){
@@ -7051,9 +7167,11 @@ function rCalend(c,mk){
     bs.onclick=function(){
       var val=parseFloat(gi("bx-val").value)||0;var dt=gi("bx-dt").value;
       var accV=gi("bx-acc")?gi("bx-acc").value:"";var ap=accV.split("|");
-      var tx={id:Date.now(),type:"entrada",category:item.service||"Atendimento",cat:item.service||"Atendimento",
+      var tx={id:genUUID(),type:"entrada",category:item.service||"Atendimento",cat:item.service||"Atendimento",
         amount:val,description:itemName,date:dt,accountId:ap[0]||"",accountName:ap[1]||"",clients:1};
-      (D.pj.transactions=D.pj.transactions||[]).unshift(tx);sv();oM(false,"m2");nav("calend")
+      (D.pj.transactions=D.pj.transactions||[]).unshift(tx);
+      pushTransactionOp("pj",tx.id,"create",tx);
+      sv();oM(false,"m2");nav("calend")
     };
     brow.appendChild(bc);brow.appendChild(bs);bd.appendChild(brow);oM(true,"m2")
   }
@@ -7094,7 +7212,7 @@ function rCalend(c,mk){
     var edB=ce("button","eb");edB.textContent="✏️";edB.title="Editar";
     (function(tx2){edB.onclick=function(){oEditCalTx(tx2)}})(t);acts.appendChild(edB);
     var delB=ce("button","db");delB.textContent="🗑";delB.title="Excluir";
-    (function(tid){delB.onclick=function(){if(confirm("Excluir este lancamento?")){D.pj.transactions=(D.pj.transactions||[]).filter(function(x){return x.id!==tid});sv();nav("calend")}}})(t.id);
+    (function(tid){delB.onclick=function(){if(confirm("Excluir este lancamento?")){D.pj.transactions=(D.pj.transactions||[]).filter(function(x){return x.id!==tid});pushTransactionOp("pj",tid,"delete",null);sv();nav("calend")}}})(t.id);
     acts.appendChild(delB);rw.appendChild(acts);detCard.appendChild(rw)
   });
 
@@ -9938,10 +10056,11 @@ function svInvPJ(pfAccs,invAccs,objs){
   (D.pjInvestments=D.pjInvestments||[]).push(rec);
   // Also create a PJ transaction so it appears in history and affects saldo
   if(tipo==="aporte"&&rec.fromId){
-    var histTx={id:Date.now()+1,type:"saida",category:"Investimento",cat:"Investimento",
+    var histTx={id:genUUID(),type:"saida",category:"Investimento",cat:"Investimento",
       amount:amt,description:rec.description||rec.invType||"Investimento",
       date:rec.date,accountId:rec.fromId,invRef:rec.id};
     (D.pj.transactions=D.pj.transactions||[]).unshift(histTx)
+    pushTransactionOp("pj",histTx.id,"create",histTx);
   }
   sv();oM(false,"m1");nav("invest")
 }
