@@ -1095,81 +1095,157 @@ var D=JSON.parse(JSON.stringify(DINIT));
 
 var _pendingCard=null;
 var _email="";
+var _localCacheState={owner:"",exists:false,parsed:false};
+var _bootstrapInProgress=false;
+var _bootstrapOwner="";
+var _snapshotWritesEnabled=false;
+var _localCacheWriteBlocked=false;
 
 function dk(){return SK_PFX+_email}
 function ldUser(email){
-  _email=email;
+  _email=String(email||"").trim().toLowerCase();
   D=JSON.parse(JSON.stringify(DINIT));
+  _localCacheState={owner:_email,exists:false,parsed:false};
+  _snapshotWritesEnabled=false;
+  _localCacheWriteBlocked=false;
+  // Timers e flags pertencem ao objeto D da conta anterior. Ao trocar de
+  // usuária, nunca podem disparar um snapshot usando a nova sessão.
+  if(typeof _debounceTimer!=="undefined"&&_debounceTimer){clearTimeout(_debounceTimer);_debounceTimer=null}
+  if(typeof _syncRetryTimer!=="undefined"&&_syncRetryTimer){clearTimeout(_syncRetryTimer);_syncRetryTimer=null}
+  if(typeof _syncDirty!=="undefined")_syncDirty=false;
+  if(typeof _hasPendingChanges!=="undefined")_hasPendingChanges=false;
+  if(typeof _pendingSince!=="undefined")_pendingSince=null;
   // Load from local cache first (instant)
-  try{var r=ls_get(dk());if(r){var p=JSON.parse(r);Object.keys(p).forEach(function(k){D[k]=p[k]})}}catch(e){}
+  try{
+    var r=ls_get(dk());
+    _localCacheState.exists=r!==null;
+    if(r!==null){var p=JSON.parse(r);Object.keys(p).forEach(function(k){D[k]=p[k]});_localCacheState.parsed=true}
+  }catch(e){_localCacheWriteBlocked=true;console.warn("Cache local existente não pôde ser lido; preservado sem sobrescrita automática.")}
 }
-// Load from cloud and merge (called after boot for background sync)
-async function syncFromCloud(){
-  if(!_email)return;
-  if(getConflictState()){setSyncStatus("conflito");return} // conflito pendente: nunca adotar nuvem automaticamente por cima do modal
+// Coordena o primeiro carregamento depois da autenticação. boot()/sv() só são
+// liberados depois que snapshot e transações tiveram oportunidade de carregar.
+async function startAuthenticatedApp(){
+  var owner=syncOwnerEmail();if(!owner)return;
+  _bootstrapInProgress=true;_bootstrapOwner=owner;_snapshotWritesEnabled=false;
+  var result=await syncFromCloud({bootstrap:true});
+  if(syncOwnerEmail()!==owner)return;
+  // boot pode executar migrações locais que chamam sv(); a guarda de bootstrap
+  // impede que elas gravem/enviem antes de a carga inicial terminar.
+  boot();
+  _bootstrapInProgress=false;_bootstrapOwner="";
+  if(result&&result.serverChecked&&!result.blocked){
+    // A revisão da linha lucrei_data pertence ao envelope do backend, não ao
+    // JSON do snapshot. Reafirmá-la aqui garante a base do primeiro sv(), mesmo
+    // se o snapshot legado trouxer _rev antigo ou alguma etapa intermediária
+    // tiver regravado D durante o pull/boot.
+    if(Number.isInteger(result.remoteRevision)&&result.remoteRevision>=0)D._rev=result.remoteRevision;
+    _snapshotWritesEnabled=true;
+    sv();
+  }
+}
+// Load from cloud and merge (called during bootstrap and after reconexão)
+async function syncFromCloud(opts){
+  opts=opts||{};
+  if(!_email)return{serverChecked:false};
+  var syncOwner=syncOwnerEmail();
+  if(opts.bootstrap&&_localCacheState.exists&&!_localCacheState.parsed){
+    return{serverChecked:false,blocked:true,invalidLocalCache:true};
+  }
+  if(hasBlockingConflict()){
+    setSyncStatus("conflito");
+    // Se o cache sumiu mas o conflito próprio contém uma cópia local, restaura
+    // somente em memória para não abrir a aplicação com D vazio.
+    var ownConflict=getConflictState(syncOwner);
+    if(opts.bootstrap&&ownConflict&&!_localCacheState.exists&&ownConflict.localSnapshot){
+      try{var conflictLocal=JSON.parse(ownConflict.localSnapshot);Object.keys(conflictLocal).forEach(function(k){D[k]=conflictLocal[k]})}catch(e){}
+    }
+    return{serverChecked:false,blocked:true};
+  }
   setSyncStatus("sincronizando");
+  var serverChecked=false,remoteRevision=null,reconcileOk=true;
   try{
     var cloud=null, cloudUpdatedAt=null;
 
     // ── ETAPA 2.3: Carregar via Railway (com fallback Supabase direto) ──────
     if(MIGRATION_FLAGS.data){
       var apiResLoad = await apiCall("/api/data/load", {method:"GET"});
+      if(syncOwnerEmail()!==syncOwner)return{serverChecked:false,accountChanged:true};
+      serverChecked=!!(apiResLoad.ok&&apiResLoad.data&&apiResLoad.data.ok);
+      if(serverChecked){
+        var parsedRemoteRevision=Number(apiResLoad.data.revision);
+        if(Number.isInteger(parsedRemoteRevision)&&parsedRemoteRevision>=0)remoteRevision=parsedRemoteRevision;
+      }
       if(apiResLoad.ok && apiResLoad.data.ok && apiResLoad.data.data){
         cloud = apiResLoad.data.data;
         cloudUpdatedAt = apiResLoad.data.updatedAt;
       }else if(apiResLoad.status===401||apiResLoad.status===403){
-        // Sessão Railway inválida — não é erro de rede, não cair no fallback
         console.warn("Sessão Railway inválida ao carregar dados");
       }else if(!apiResLoad.ok && _cloudEnabled){
-        // Erro de rede/servidor — fallback Supabase direto
         console.warn("Railway load indisponível, usando fallback Supabase direto");
         var row=await sbGet("lucrei_data",{email:_email});
-        if(row&&row.data){cloud=row.data;cloudUpdatedAt=row.updated_at}
+        if(row&&row.data){cloud=row.data;cloudUpdatedAt=row.updated_at;serverChecked=true}
       }else if(!apiResLoad.ok){
         console.warn("Falha ao carregar dados da nuvem:",apiResLoad.status,apiResLoad.data);
       }
     }else if(_cloudEnabled){
       var row2=await sbGet("lucrei_data",{email:_email});
-      if(row2&&row2.data){cloud=row2.data;cloudUpdatedAt=row2.updated_at}
+      if(row2&&row2.data){cloud=row2.data;cloudUpdatedAt=row2.updated_at;serverChecked=true}
     }
 
+    var ownQueue=getSyncQueue(syncOwner);
+    // Regra conservadora: só é realmente novo quando a chave lc-dat nem existe.
+    // Cache existente, mesmo sem _syncedAt, nunca é substituído como se fosse vazio.
+    var trulyNew=!!(opts.bootstrap&&!_localCacheState.exists&&!ownQueue.length&&!getConflictState(syncOwner)&&!hasLegacyConflictQuarantine());
+    // Estabelece a revisão autoritativa antes de copiar o JSON legado. O próprio
+    // snapshot pode conter _rev desatualizado e não deve vencer o envelope.
+    if(trulyNew&&serverChecked&&remoteRevision!==null)D._rev=remoteRevision;
     if(cloud){
-      // Compare by recency timestamp (covers ALL collections: transactions, accounts, cards,
-      // investments, objectives, clients, agenda, plans, config — not just transaction count).
-      // D._syncedAt agora só é carimbado quando o SERVIDOR confirma um save (ver sv()/triggerSyncPush),
-      // então essa comparação passou a ser confiável: um dispositivo com uma gravação pendente/falha
-      // não vai mais "vencer" essa comparação injustamente contra dados mais novos da nuvem.
       var localStamp=D._syncedAt?new Date(D._syncedAt).getTime():0;
       var cloudStamp=cloud._syncedAt?new Date(cloud._syncedAt).getTime():(cloudUpdatedAt?new Date(cloudUpdatedAt).getTime():0);
-      var shouldAdoptCloud;
-      if(localStamp&&cloudStamp){
+      var shouldAdoptCloud=trulyNew;
+      if(!trulyNew&&opts.bootstrap){
+        // Cache existente é preservado no primeiro carregamento. Se o servidor
+        // estiver em outra revisão, o push posterior gera 409 em vez de apagar
+        // silenciosamente uma possível mudança local não confirmada.
+        shouldAdoptCloud=false;
+      }else if(!trulyNew&&localStamp&&cloudStamp){
         shouldAdoptCloud=cloudStamp>localStamp;
-      }else{
-        // Sprint 2: contagem de transações não serve mais de critério — elas não
-        // são mais controladas por este snapshot. Sem timestamp confiável dos
-        // dois lados, por segurança NÃO adota a nuvem (evita sobrescrever local
-        // sem necessidade real).
+      }else if(!trulyNew){
+        // Sem timestamps confiáveis dos dois lados, preservar o cache existente.
         shouldAdoptCloud=false;
       }
       if(shouldAdoptCloud){
-        // Preserva as transações PF/PJ locais — sua fonte de verdade agora é
-        // pullTransactions()/mergeTransactionsById(), nunca este snapshot antigo.
+        // Snapshot nunca volta a ser fonte de verdade das transações.
         var localPfTx=D.pf.transactions,localPjTx=D.pj.transactions;
         Object.keys(cloud).forEach(function(k){D[k]=cloud[k]});
         D.pf.transactions=localPfTx;
         D.pj.transactions=localPjTx;
-        ls_set(dk(),JSON.stringify(D));// save merged data locally without re-stamping (preserve cloud's timestamp)
+        if(remoteRevision!==null)D._rev=remoteRevision;
+        ls_set(dk(),JSON.stringify(D));
         if(typeof nav==="function")nav(tab);
       }
+    }else if(trulyNew&&serverChecked&&remoteRevision!==null){
+      D._rev=remoteRevision;
     }
   }catch(e){
+    reconcileOk=false;
     console.warn("syncFromCloud falhou:",e);
   }
-  // Depois do pull (adotou a nuvem ou manteve o local), garantir que o estado final
-  // de D seja confirmado no servidor — cobre o caso de haver uma mudança local pendente
-  // que nunca chegou a ser salva (ex: sessão anterior fechada no meio de um envio).
+  // Object.keys(cloud) e o pull podem carregar um _rev embutido antigo. Para
+  // aparelho realmente novo, a revisão do envelope sempre vence ao final.
+  if(reconcileOk&&trulyNew&&serverChecked&&remoteRevision!==null)D._rev=remoteRevision;
+  if(syncOwnerEmail()!==syncOwner)return{serverChecked:false,accountChanged:true};
+  // Pull posterior ao snapshot garante que tabelas normalizadas e tombstones
+  // determinem o estado final das transações PF/PJ.
+  if(serverChecked)await pullTransactions();
+  if(syncOwnerEmail()!==syncOwner)return{serverChecked:false,accountChanged:true};
+  if(reconcileOk&&trulyNew&&serverChecked&&remoteRevision!==null)D._rev=remoteRevision;
+  if(opts.bootstrap)return{serverChecked:serverChecked&&reconcileOk,blocked:!reconcileOk,remoteRevision:remoteRevision};
+  if(!serverChecked)return{serverChecked:false};
+  _snapshotWritesEnabled=true;
+  // Fora do bootstrap, mantém a reconciliação normal após reconexão.
   triggerSyncPush();
-  pullTransactions(); // Sprint 2 — transações PF/PJ sincronizam por fora deste fluxo
+  return{serverChecked:true};
 }
 // ── Coordenação entre abas do mesmo navegador ─────────────────────────────────
 // _syncInFlight/_syncDirty só existem na memória desta aba. Duas abas da mesma
@@ -1240,7 +1316,13 @@ function exportJSON(obj,filename){
 // enquanto não resolvido, (2) sobrevive a refresh/reabrir o app, e (3) tem
 // um modal de verdade com revisão de diferenças e três formas seguras de
 // resolver, sem nunca sobrescrever nada silenciosamente.
-var CONFLICT_KEY="lc-conflict-pending";
+var LEGACY_CONFLICT_KEY="lc-conflict-pending";
+function syncOwnerEmail(email){return String(email===undefined?_email:email||"").trim().toLowerCase()}
+function syncOwnerSuffix(email){var owner=syncOwnerEmail(email);return owner?encodeURIComponent(owner):""}
+function syncQueueKey(email){var suffix=syncOwnerSuffix(email);return suffix?"lc-sync-queue:"+suffix:null}
+function txSyncCursorKey(email){var suffix=syncOwnerSuffix(email);return suffix?"lc-last-tx-sync:"+suffix:null}
+function conflictKey(email){var suffix=syncOwnerSuffix(email);return suffix?"lc-conflict-pending:"+suffix:null}
+function legacyConflictImportedKey(email){var suffix=syncOwnerSuffix(email);return suffix?"lc-conflict-legacy-imported:"+suffix:null}
 var CONFLICT_CATEGORIES=[
   {key:"pf_tx",label:"Transações PF",path:["pf","transactions"]},
   {key:"pj_tx",label:"Transações PJ",path:["pj","transactions"]},
@@ -1285,9 +1367,57 @@ function mergeCategory(localArr,cloudArr){
   return order.map(function(id){return byId[id]});
 }
 
-function saveConflictState(state){try{ls_set(CONFLICT_KEY,JSON.stringify(state))}catch(e){}}
-function getConflictState(){try{var r=ls_get(CONFLICT_KEY);return r?JSON.parse(r):null}catch(e){return null}}
-function clearConflictState(){try{localStorage.removeItem(CONFLICT_KEY)}catch(e){}}
+function conflictOwnerFromState(state){
+  try{
+    if(state&&state.ownerEmail)return syncOwnerEmail(state.ownerEmail);
+    if(state&&state.localSnapshot){
+      var local=typeof state.localSnapshot==="string"?JSON.parse(state.localSnapshot):state.localSnapshot;
+      if(local&&local.userEmail)return syncOwnerEmail(local.userEmail);
+    }
+  }catch(e){}
+  return"";
+}
+// A chave global antiga nunca é removida. Se o próprio conteúdo identifica com
+// segurança a dona, copiamos o conflito para a chave dela (sem depender de qual
+// conta está logada). Se não identifica, permanece em quarentena e bloqueia
+// qualquer push automático de snapshot, sem ser atribuído a ninguém.
+function reconcileLegacyConflict(){
+  try{
+    var raw=ls_get(LEGACY_CONFLICT_KEY);if(!raw)return{state:null,owner:"",quarantined:false};
+    var state=JSON.parse(raw),owner=conflictOwnerFromState(state);
+    if(owner){
+      var target=conflictKey(owner),marker=legacyConflictImportedKey(owner);
+      if(target&&marker&&!ls_get(marker)){
+        if(!ls_get(target))ls_set(target,raw);
+        ls_set(marker,"1"); // impede reimportar depois de uma resolução; o legado original continua preservado
+      }
+      return{state:state,owner:owner,quarantined:false};
+    }
+    return{state:state,owner:"",quarantined:true};
+  }catch(e){return{state:null,owner:"",quarantined:true}}
+}
+function saveConflictState(state,email){
+  try{
+    var owner=syncOwnerEmail(email);if(!owner)return;
+    state=Object.assign({},state,{ownerEmail:owner});
+    ls_set(conflictKey(owner),JSON.stringify(state));
+  }catch(e){}
+}
+function getConflictState(email){
+  try{
+    var owner=syncOwnerEmail(email);if(!owner)return null;
+    reconcileLegacyConflict();
+    var r=ls_get(conflictKey(owner));if(!r)return null;
+    var state=JSON.parse(r),stateOwner=conflictOwnerFromState(state);
+    return stateOwner&&stateOwner!==owner?null:state;
+  }catch(e){return null}
+}
+function hasLegacyConflictQuarantine(){return reconcileLegacyConflict().quarantined}
+function hasBlockingConflict(email){return!!getConflictState(email)||hasLegacyConflictQuarantine()}
+function clearConflictState(email){
+  try{var key=conflictKey(email);if(key)localStorage.removeItem(key)}catch(e){}
+}
+function currentUserOwnsConflict(state){return conflictOwnerFromState(state)===syncOwnerEmail()}
 
 function showConflictNotice(cloudSnapshot){
   var state={
@@ -1296,11 +1426,12 @@ function showConflictNotice(cloudSnapshot){
     localRev:D._rev||0,
     cloudRev:(cloudSnapshot&&typeof cloudSnapshot._rev==="number")?cloudSnapshot._rev:null,
     deviceId:_deviceId,
+    ownerEmail:syncOwnerEmail(),
     at:new Date().toISOString()
   };
   saveConflictState(state);
   _lastConflict={local:D,cloud:cloudSnapshot,at:state.at};
-  console.warn("Conflito de sincronização detectado (409). Estado salvo em "+CONFLICT_KEY+".",state);
+  console.warn("Conflito de sincronização detectado (409). Estado salvo em "+conflictKey()+".",state);
   setSyncStatus("conflito"); // renderSyncBadge() já religa o clique do badge — ver lá
 }
 
@@ -1440,6 +1571,7 @@ function renderConflictConfirm(cs,choice){
 // só que primeiro busca a revisão real e atual do servidor — não é um
 // bypass, é o procedimento correto (a proteção 409 continua validando tudo).
 function resolveConflictUseLocal(cs){
+  if(!currentUserOwnsConflict(cs)){alert("Este conflito pertence a outra conta e foi mantido sem alterações.");return}
   (async function(){
     setSyncStatus("sincronizando");
     try{
@@ -1455,7 +1587,7 @@ function resolveConflictUseLocal(cs){
       var result=await triggerSyncPush(true);
       if(result.ok){
         // D._rev/D._syncedAt já foram atualizados dentro do próprio triggerSyncPush() no sucesso.
-        clearConflictState();
+        clearConflictState(cs.ownerEmail);
         oM(false,"m2");
       }else if(result.conflict){
         // Uma NOVA alteração chegou na nuvem entre a leitura da revisão e o envio.
@@ -1478,6 +1610,7 @@ function resolveConflictUseLocal(cs){
 }
 
 function resolveConflictUseCloud(cs){
+  if(!currentUserOwnsConflict(cs)){alert("Este conflito pertence a outra conta e foi mantido sem alterações.");return}
   if(!cs.cloudSnapshot){alert("Não temos a versão da nuvem disponível agora. Tente 'Revisar diferenças' ou aguarde reconectar.");return}
   // "Usar nuvem" não envia nada ao servidor — só adota o que já está lá — então
   // não existe HTTP a esperar aqui. O backup local roda antes de qualquer
@@ -1488,13 +1621,14 @@ function resolveConflictUseCloud(cs){
   Object.keys(cloud).forEach(function(k){D[k]=cloud[k]});
   if(typeof cs.cloudRev==="number")D._rev=cs.cloudRev;
   ls_set(dk(),JSON.stringify(D));
-  clearConflictState();
+  clearConflictState(cs.ownerEmail);
   setSyncStatus("salvo");
   oM(false,"m2");
   if(typeof nav==="function")nav(tab);
 }
 
 function resolveConflictMerge(cs){
+  if(!currentUserOwnsConflict(cs)){alert("Este conflito pertence a outra conta e foi mantido sem alterações.");return}
   if(!cs.cloudSnapshot){alert("Não temos a versão da nuvem disponível agora para mesclar. Tente novamente em instantes.");return}
   (async function(){
     setSyncStatus("sincronizando");
@@ -1524,7 +1658,7 @@ function resolveConflictMerge(cs){
 
       var result=await triggerSyncPush(true); // bypassa a guarda — resolução explícita confirmada
       if(result.ok){
-        clearConflictState();
+        clearConflictState(cs.ownerEmail);
         oM(false,"m2");
         if(typeof nav==="function")nav(tab);
       }else if(result.conflict){
@@ -1583,6 +1717,7 @@ function renderSyncBadge(){
   // interno passe por esses estados (continuam rastreados, só não aparecem).
   var mode=null;
   if(getConflictState())mode="conflito";
+  else if(hasLegacyConflictQuarantine())mode="conflito_legado";
   else if(_offlineProlonged&&_hasPendingChanges)mode="offline_prolongado";
   else if(isPendingProlonged())mode="pendencia_prolongada";
 
@@ -1590,6 +1725,7 @@ function renderSyncBadge(){
 
   var cfg={
     conflito:            {icon:"⚠️", bg:"#fff7ed", col:"#c2410c", bd:"#fed7aa", title:"Precisamos confirmar seus dados — toque para revisar"},
+    conflito_legado:     {icon:"⚠️", bg:"#fff7ed", col:"#c2410c", bd:"#fed7aa", title:"Existe uma sincronização antiga preservada para revisão"},
     offline_prolongado:  {icon:"📡", bg:"#f9fafb", col:"#6b7280", bd:"#e5e7eb", title:"Seus dados estão seguros neste aparelho"},
     pendencia_prolongada:{icon:"☁️", bg:"#f9fafb", col:"#6b7280", bd:"#e5e7eb", title:"Algumas atualizações ainda estão sendo concluídas"}
   }[mode];
@@ -1605,6 +1741,10 @@ function renderSyncBadge(){
 
 function onSyncIndicatorTap(mode){
   if(mode==="conflito"){openConflictModal();return} // fluxo de resolução já existente, intacto
+  if(mode==="conflito_legado"){
+    showSyncPopup("Existe um conflito antigo preservado neste navegador, mas não foi possível identificar com segurança a qual conta ele pertence. Nenhum dado foi apagado e o envio automático permanece bloqueado.",false);
+    return;
+  }
   if(mode==="offline_prolongado"){
     showSyncPopup("Seus lançamentos estão seguros neste aparelho. Assim que a internet voltar, o Lucrei atualiza tudo automaticamente.",false);
     return;
@@ -1660,12 +1800,15 @@ function genUUID(){
 // ── Fila offline de operações pendentes ───────────────────────────
 // Cada operação guarda seu próprio operationId — um retry SEMPRE
 // reusa o mesmo, nunca gera um novo (é isso que torna o retry seguro).
-function getSyncQueue(){try{return JSON.parse(ls_get("lc-sync-queue")||"[]")}catch(e){return[]}}
-function saveSyncQueue(q){ls_set("lc-sync-queue",JSON.stringify(q))}
+function getSyncQueue(email){
+  try{var key=syncQueueKey(email);return key?JSON.parse(ls_get(key)||"[]"):[]}catch(e){return[]}
+}
+function saveSyncQueue(q,email){var key=syncQueueKey(email);if(key)ls_set(key,JSON.stringify(q))}
 function queueSyncOp(entityType,entityId,operation,payload){
-  var q=getSyncQueue();
-  q.push({operationId:genUUID(),deviceId:_deviceId,entityType:entityType,entityId:entityId,operation:operation,payload:payload||null,queuedAt:new Date().toISOString()});
-  saveSyncQueue(q);
+  var owner=syncOwnerEmail();if(!owner)return;
+  var q=getSyncQueue(owner);
+  q.push({operationId:genUUID(),ownerEmail:owner,deviceId:_deviceId,entityType:entityType,entityId:entityId,operation:operation,payload:payload||null,queuedAt:new Date().toISOString()});
+  saveSyncQueue(q,owner);
 }
 
 var _syncQueueProcessing=false;
@@ -1674,18 +1817,26 @@ var _syncQueueProcessing=false;
 // próximo ciclo em vez de pular operações).
 async function processSyncQueue(){
   if(_syncQueueProcessing||!navigator.onLine||!_email)return;
+  var processingOwner=syncOwnerEmail();if(!processingOwner)return;
   _syncQueueProcessing=true;
   try{
-    var queue=getSyncQueue();
+    var queue=getSyncQueue(processingOwner);
     for(var i=0;i<queue.length;i++){
       var op=queue[i];
+      // Uma troca de conta durante o processamento nunca pode enviar nem
+      // remover itens usando a nova sessão. Operação sem dona também não é
+      // atribuída silenciosamente: fica preservada na fila específica.
+      if(syncOwnerEmail()!==processingOwner)break;
+      if(syncOwnerEmail(op.ownerEmail)!==processingOwner)break;
       try{
         var res=await apiCall("/api/sync/push",{method:"POST",body:{
           operationId:op.operationId,deviceId:op.deviceId,entityType:op.entityType,
           entityId:op.entityId,operation:op.operation,payload:op.payload
         }});
         if(res.ok&&(res.data.applied||res.data.duplicate)){
-          saveSyncQueue(getSyncQueue().filter(function(o){return o.operationId!==op.operationId}));
+          saveSyncQueue(getSyncQueue(processingOwner).filter(function(o){
+            return!(o.operationId===op.operationId&&syncOwnerEmail(o.ownerEmail)===processingOwner)
+          }),processingOwner);
         }else{
           break; // erro real — mantém na fila, tenta de novo depois
         }
@@ -1703,17 +1854,22 @@ function pushTransactionOp(scope,entityId,operation,payload){
 }
 
 // ── Pull incremental — mescla por ID, nunca substitui o array inteiro ──
-var _lastTxSync=ls_get("lc-last-tx-sync")||null;
 async function pullTransactions(){
   if(!_email)return;
+  var pullOwner=syncOwnerEmail();if(!pullOwner)return;
   try{
-    var qs=_lastTxSync?("?since="+encodeURIComponent(_lastTxSync)):"";
+    // Cursor global legado é intencionalmente ignorado. Sem cursor próprio, a
+    // usuária faz pull completo; repetir e mesclar por ID é mais seguro que
+    // herdar o cursor ambíguo de outra conta e pular histórico.
+    var cursorKey=txSyncCursorKey(pullOwner);
+    var lastTxSync=cursorKey?ls_get(cursorKey):null;
+    var qs=lastTxSync?("?since="+encodeURIComponent(lastTxSync)):"";
     var res=await apiCall("/api/sync/pull"+qs,{method:"GET"});
     if(!res.ok)return;
+    if(syncOwnerEmail()!==pullOwner)return; // resposta de uma sessão anterior: nunca mesclar na conta atual
     mergeTransactionsById("pf",(res.data.data&&res.data.data.transactions_pf)||[]);
     mergeTransactionsById("pj",(res.data.data&&res.data.data.transactions_pj)||[]);
-    _lastTxSync=res.data.serverTime;
-    ls_set("lc-last-tx-sync",_lastTxSync);
+    if(res.data.serverTime&&cursorKey)ls_set(cursorKey,res.data.serverTime);
   }catch(e){}
 }
 function mergeTransactionsById(scope,serverItems){
@@ -1740,7 +1896,10 @@ window.addEventListener("online",function(){processSyncQueue();pullTransactions(
 
 function sv(){
   if(!_email)return;
+  if(_bootstrapInProgress)return; // nunca gravar D vazio/incompleto durante a carga inicial
+  if(_localCacheWriteBlocked)return; // cache ilegível permanece intacto para recuperação manual
   ls_set(dk(),JSON.stringify(D)); // cache local imediato — isto NÃO é confirmação de sincronização
+  if(!_snapshotWritesEnabled)return; // falha/bloqueio no bootstrap: preserva local, não envia snapshot
   _syncDirty=true;
   _hasPendingChanges=true;
   if(_pendingSince===null)_pendingSince=Date.now();
@@ -1759,7 +1918,10 @@ function scheduleDebouncedPush(){
 
 function triggerSyncPush(bypassConflictGuard){
   if(!_email)return Promise.resolve({ok:false,error:"no_email"});
-  if(!bypassConflictGuard&&getConflictState()){setSyncStatus("conflito");return Promise.resolve({ok:false,conflict:true})} // conflito pendente: não reenviar sozinho (evita loop de 409) — bypassado só pela resolução explícita do próprio conflito
+  if(_bootstrapInProgress||!_snapshotWritesEnabled)return Promise.resolve({ok:false,pending:true,error:"bootstrap_not_ready"});
+  var pushOwner=syncOwnerEmail();
+  if(hasLegacyConflictQuarantine()){setSyncStatus("conflito");return Promise.resolve({ok:false,conflict:true})} // legado sem dona nunca é bypassado
+  if(!bypassConflictGuard&&getConflictState()){setSyncStatus("conflito");return Promise.resolve({ok:false,conflict:true})} // conflito próprio: bypass só na resolução explícita
   if(_syncInFlight){_syncDirty=true;return Promise.resolve({ok:false,pending:true})} // já existe um envio em andamento — só marca que há mudança nova
   if(!navigator.onLine){setSyncStatus("sem_conexao");return Promise.resolve({ok:false,offline:true})}
   _syncInFlight=true;_syncDirty=false;
@@ -1794,6 +1956,12 @@ function triggerSyncPush(bypassConflictGuard){
       }
     }catch(e){ok=false;errMsg=e.message}
     _syncInFlight=false;
+    // A resposta pertence ao snapshot capturado para pushOwner. Se outra conta
+    // entrou durante a requisição, nunca carimbar revisão/conflito no D atual.
+    if(syncOwnerEmail()!==pushOwner){
+      if(_syncDirty&&_snapshotWritesEnabled)return triggerSyncPush();
+      return{ok:ok,conflict:conflict,ownerChanged:true};
+    }
     if(ok){
       D._syncedAt=new Date().toISOString(); // só agora — confirmado pelo servidor
       if(newRev!==null)D._rev=newRev;
@@ -1850,7 +2018,7 @@ window.addEventListener("offline",function(){
 // periodicamente, pra "pendência prolongada" aparecer mesmo sem nova digitação.
 setInterval(function(){
   renderSyncBadge();
-  if(_email&&_hasPendingChanges&&navigator.onLine&&!_syncInFlight&&!getConflictState()){
+  if(_email&&_hasPendingChanges&&navigator.onLine&&!_syncInFlight&&!hasBlockingConflict()){
     triggerSyncPush();
   }
 },SAFETY_INTERVAL_MS);
@@ -2029,7 +2197,7 @@ async function authGo(){
           return;
         }
         ldUser(em);D.userName=nm;D.userEmail=em;D.perfil=selPerf;
-        saveSession(em);sv();boot();
+        saveSession(em);await startAuthenticatedApp();
         return;
       }else if(apiResReg.status===409){
         showErr("E-mail já cadastrado. Faça login.");return;
@@ -2059,8 +2227,7 @@ async function authGo(){
         ls_set("lc-api-email", em);
         var usr2 = apiRes.data.user;
         ldUser(em);D.userName=usr2.name;D.userEmail=usr2.email||em;D.perfil=usr2.perfil||"autonoma";
-        saveSession(em);sv();boot();
-        syncFromCloud();
+        saveSession(em);await startAuthenticatedApp();
         return;
       }else if(apiRes.status===401||apiRes.status===404||apiRes.status===403){
         // Railway respondeu mas credenciais inválidas/bloqueadas — não cair no fallback.
@@ -2083,7 +2250,7 @@ async function authGo(){
         ls_set("lc-api-email",em);
         var usr3=retryRes.data.user;
         ldUser(em);D.userName=usr3.name;D.userEmail=usr3.email||em;D.perfil=usr3.perfil||"autonoma";
-        saveSession(em);sv();boot();syncFromCloud();return;
+        saveSession(em);await startAuthenticatedApp();return;
       }else if(retryRes.status===401){
         showErr("Senha incorreta.");return;
       }else if(retryRes.status===403){
@@ -2117,8 +2284,7 @@ async function authGo(){
     if(subStatus==="pending"){
       showErr("Acesso não encontrado. Para acessar o Lucrei, assine um plano em: rafaelaladvig.github.io/paginadevendas");return;
     }
-    saveSession(em);sv();boot();
-    syncFromCloud();
+    saveSession(em);await startAuthenticatedApp();
   }
 }
 
@@ -2740,6 +2906,7 @@ function logout(){
   }catch(e){}
   ls_set("lc-api-token","");ls_set("lc-api-email","");try{sessionStorage.removeItem("lc-api-token")}catch(e){}
   clearSession();D=JSON.parse(JSON.stringify(DINIT));_email="";
+  _bootstrapInProgress=false;_bootstrapOwner="";_snapshotWritesEnabled=false;_localCacheWriteBlocked=false;
   gi("sa").style.display="flex";gi("app").style.display="none";
   setMode("login");gi("a-em").value="";gi("a-pw").value="";gi("aerr").style.display="none"
 }
@@ -10975,8 +11142,7 @@ window.onload=function(){
         return;
       }
       saveSession(sess.email);
-      boot();
-      syncFromCloud();
+      startAuthenticatedApp();
       return
     }
   }
