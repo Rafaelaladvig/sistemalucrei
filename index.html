@@ -7389,8 +7389,8 @@ function completedAppointmentDetailLines(h,cl){
   if(h.time)lines.push("Horário inicial: "+h.time);
   if(h.completedTime||h.endTime)lines.push("Horário final: "+(h.completedTime||h.endTime));
   if(completionDate)lines.push("Conclusão: "+completionDate+(h.completedTime?" às "+h.completedTime:""));
-  if(h.scheduledServiceName||h.service)lines.push("Serviço agendado: "+(h.scheduledServiceName||h.service));
-  if(performedNames)lines.push("Serviço realizado: "+performedNames);
+  if(h.scheduledServices&&h.scheduledServices.length){lines.push("Serviços agendados:");h.scheduledServices.forEach(function(s){lines.push("• "+s.name+" · "+R(s.originalValue||0)+(s.packageInstanceId?" · Pacote":""))})}else if(h.scheduledServiceName||h.service)lines.push("Serviço agendado: "+(h.scheduledServiceName||h.service));
+  if(h.performedServices&&h.performedServices.length){lines.push("Serviços realizados:");h.performedServices.forEach(function(s){lines.push("• "+s.name+" · original "+R(s.originalValue!==undefined?s.originalValue:s.value||0)+" · desconto "+R(s.discountAllocated||0)+" · atribuído "+R(s.analysisValue!==undefined?s.analysisValue:(s.finalAllocated!==undefined?s.finalAllocated:s.value||0))+(s.packageInstanceId?" · Pacote":""))})}else if(performedNames)lines.push("Serviço realizado: "+performedNames);
   lines.push("Valor original: "+R(original));
   if(h.discountValue!==undefined)lines.push("Desconto: "+R(h.discountValue)+(h.discountPercent?" ("+h.discountPercent+"%)":""));
   lines.push("Valor final: "+R(finalVal));
@@ -7460,9 +7460,8 @@ function oDetalheAg(id){
     var bFalta=ce("button","btn bou");bFalta.style.cssText="color:#d97706;border-color:#fde68a";bFalta.textContent="🚫 Marcar falta";
     bFalta.onclick=function(){
       if(!confirm("Marcar falta de "+ag.clientName+"?"))return;
-      var consume=ag.usePackage?confirm("Consumir este serviço do pacote?\n\nOK: consumir crédito\nCancelar: não consumir crédito"):false;
-      if(consume)consumePackageCredit(ag.packageInstanceId,ag.packageServiceId,"no_show",ag.id,tod());
-      D.agenda=(D.agenda||[]).map(function(a){return String(a.id)===String(id)?Object.assign({},a,{status:"faltou",packageCreditConsumed:consume,packageConsumptionReason:consume?"falta":null}):a});
+      var consumedServices=consumeScheduledPackageCredits(ag,"no_show","falta");
+      D.agenda=(D.agenda||[]).map(function(a){return String(a.id)===String(id)?Object.assign({},a,{status:"faltou",packageCreditConsumed:consumedServices.length>0,packageConsumedServiceIds:consumedServices,packageConsumptionReason:consumedServices.length?"falta":null}):a});
       sv();oM(false,"m2");nav("calend");
     };
     actGrid.appendChild(bFalta);
@@ -7471,9 +7470,8 @@ function oDetalheAg(id){
     bCancelar.onclick=function(){
       if(!confirm("Cancelar este agendamento?"))return;
       var now=new Date();var cancelTime=String(now.getHours()).padStart(2,"0")+":"+String(now.getMinutes()).padStart(2,"0");
-      var consume=ag.usePackage?confirm("Consumir este serviço do pacote?\n\nOK: consumir crédito\nCancelar: não consumir crédito"):false;
-      if(consume)consumePackageCredit(ag.packageInstanceId,ag.packageServiceId,"canceled",ag.id,tod());
-      D.agenda=(D.agenda||[]).map(function(a){return String(a.id)===String(id)?Object.assign({},a,{status:"cancelado",canceledAt:tod(),canceledTime:cancelTime,packageCreditConsumed:consume,packageConsumptionReason:consume?"cancelamento":null}):a});
+      var consumedServices=consumeScheduledPackageCredits(ag,"canceled","cancelamento");
+      D.agenda=(D.agenda||[]).map(function(a){return String(a.id)===String(id)?Object.assign({},a,{status:"cancelado",canceledAt:tod(),canceledTime:cancelTime,packageCreditConsumed:consumedServices.length>0,packageConsumedServiceIds:consumedServices,packageConsumptionReason:consumedServices.length?"cancelamento":null}):a});
       sv();oM(false,"m2");nav("calend");
     };
     actGrid.appendChild(bCancelar);
@@ -9397,6 +9395,9 @@ function oNovoAgendamento(editId){
   var defOpt=ce("option");defOpt.value="";defOpt.textContent="Selecione o serviço";agSvSel.appendChild(defOpt);
   (D.services||[]).filter(function(s){return s.active!==false}).forEach(function(sv){var o=ce("option");o.value=sv.id;o.textContent=(sv.icon||"")+" "+sv.name+(sv.price?" — "+R(sv.price):"");agSvSel.appendChild(o)});
   bd.appendChild(lbl("Serviço"));bd.appendChild(agSvSel);
+  var extraServices=ce("div");extraServices.id="ag-extra-services";bd.appendChild(extraServices);
+  function addExtraService(data){var row=ce("div");row.className="ag-extra-service-row";row.style.cssText="border:1px solid var(--bd);border-radius:9px;padding:8px;margin-bottom:8px";var top=ce("div");top.style.cssText="display:grid;grid-template-columns:1fr 88px 34px;gap:6px";var s=ce("select","sel");s.className="ag-extra-service";s.style.marginBottom="0";(D.services||[]).filter(function(x){return x.active!==false&&serviceKind(x)==="individual"}).forEach(function(x){var o=ce("option");o.value=x.id;o.textContent=x.name;if(data&&String(data.serviceId)===String(x.id))o.selected=true;s.appendChild(o)});var val=ce("input","inp");val.className="ag-extra-value";val.type="number";val.step="0.01";val.style.marginBottom="0";var selected=function(){return(D.services||[]).find(function(x){return String(x.id)===String(s.value)})};val.value=data&&data.originalValue!==undefined?data.originalValue:(selected()&&selected().price)||0;var del=ce("button","btn bou");del.textContent="×";del.onclick=function(){row.remove();recalcSchedule()};top.appendChild(s);top.appendChild(val);top.appendChild(del);row.appendChild(top);var pkg=ce("select","sel");pkg.className="ag-extra-package";pkg.style.cssText="margin:6px 0 0";row.appendChild(pkg);extraServices.appendChild(row);function refreshExtraPackages(){var old=data&&data.packageInstanceId||pkg.value;pkg.innerHTML="";var normal=ce("option");normal.value="";normal.textContent="Pagamento normal";pkg.appendChild(normal);availablePackageCredits(cliSel&&cliSel.value,s.value).forEach(function(p){var o=ce("option");o.value=p.id;o.textContent="Usar crédito · "+p.name+(p.expiryDate?" · "+p.expiryDate.split("-").reverse().join("/"):"");pkg.appendChild(o)});pkg.value=old||""}s.onchange=function(){var x=selected();val.value=x&&x.price||0;data=null;refreshExtraPackages();recalcSchedule()};val.oninput=recalcSchedule;pkg.onchange=recalcSchedule;row.refreshPackages=refreshExtraPackages;setTimeout(refreshExtraPackages,0);recalcSchedule()}
+  var addExtra=ce("button","btn bou");addExtra.type="button";addExtra.style.cssText="width:100%;margin:-2px 0 8px";addExtra.textContent="+ Adicionar outro serviço";addExtra.onclick=function(){addExtraService()};bd.appendChild(addExtra);
 
   var cliSel=ce("select","sel");cliSel.id="agcl";cliSel.style.marginBottom="8px";
   var defCl=ce("option");defCl.value="";defCl.textContent="Selecione a cliente";cliSel.appendChild(defCl);
@@ -9421,6 +9422,7 @@ function oNovoAgendamento(editId){
   lblEnd.appendChild(tmEndInp);dtRow2.appendChild(lblEnd);bd.appendChild(dtRow2);
 
   var vlInp=ce("input","inp");vlInp.id="agvl";vlInp.type="number";vlInp.placeholder="Valor (opcional)";vlInp.style.marginBottom="8px";bd.appendChild(vlInp);
+  vlInp.readOnly=true;
   var ntInp=ce("input","inp");ntInp.id="agnt";ntInp.placeholder="Observações (opcional)";ntInp.style.marginBottom="8px";bd.appendChild(ntInp);
 
   var ftRow=ce("label");ftRow.style.cssText="display:flex;align-items:center;gap:8px;font-size:12px;color:#6b7280;margin-bottom:10px;cursor:pointer";
@@ -9428,7 +9430,7 @@ function oNovoAgendamento(editId){
   ftRow.appendChild(ftCk);ftRow.appendChild(document.createTextNode("Primeira visita"));bd.appendChild(ftRow);
 
   if(agEditObj){
-    var svMatch=agEditObj.service?(D.services||[]).find(function(s){return s.name===agEditObj.service}):null;
+    var scheduledExisting=(agEditObj.scheduledServices&&agEditObj.scheduledServices.length)?agEditObj.scheduledServices:null;var svMatch=scheduledExisting?(D.services||[]).find(function(s){return String(s.id)===String(scheduledExisting[0].serviceId)}):(agEditObj.service?(D.services||[]).find(function(s){return s.name===agEditObj.service}):null);
     agSvSel.value=svMatch?svMatch.id:"";
     cliSel.value=agEditObj.clientId?String(agEditObj.clientId):"";
     cnInp.value=agEditObj.clientName||"";
@@ -9438,15 +9440,17 @@ function oNovoAgendamento(editId){
     vlInp.value=agEditObj.value||"";
     ntInp.value=agEditObj.notes||"";
     ftCk.checked=!!agEditObj.isFirstTime;
-    refreshPackageChoice();if(agEditObj.usePackage&&gi("ag-use-package")){gi("ag-use-package").checked=true;gi("ag-package-id").style.display="block";gi("ag-package-id").value=agEditObj.packageInstanceId||""}
+    refreshPackageChoice();if(agEditObj.usePackage&&gi("ag-use-package")){gi("ag-use-package").checked=true;gi("ag-package-id").style.display="block";gi("ag-package-id").value=agEditObj.packageInstanceId||""}if(scheduledExisting)scheduledExisting.slice(1).forEach(addExtraService);
     if(!agEditObj.clientId){
       var legacy=ce("div");legacy.style.cssText="font-size:11px;color:#92400e;background:#fff7ed;padding:8px 10px;border-radius:8px;margin-bottom:8px";
       legacy.textContent="Agendamento antigo sem vínculo de cliente. Selecione uma cliente somente se tiver certeza; o nome histórico será preservado enquanto não houver seleção.";bd.insertBefore(legacy,dtRow);
     }
   }
-  agSvSel.onchange=function(){onAgSv(agSvSel);refreshPackageChoice()};
-  cliSel.onchange=function(){onAgCl(cliSel);refreshPackageChoice()};
-  tmInp.onchange=function(){if(agSvSel.value)onAgSv(agSvSel)};
+  function recalcSchedule(){var first=(D.services||[]).find(function(s){return String(s.id)===String(agSvSel.value)}),total=(first?Number(first.price)||0:0),duration=first?serviceDurationMin(first):0;extraServices.querySelectorAll(".ag-extra-service-row").forEach(function(r){var s=(D.services||[]).find(function(x){return String(x.id)===String(r.querySelector(".ag-extra-service").value)});total+=parseFloat(r.querySelector(".ag-extra-value").value)||0;if(s)duration+=serviceDurationMin(s)});vlInp.value=total.toFixed(2);if(tmInp.value&&(!agEditObj||!tmEndInp.value))tmEndInp.value=suggestedEndTime(tmInp.value,duration)}
+  agSvSel.onchange=function(){onAgSv(agSvSel);refreshPackageChoice();recalcSchedule()};
+  cliSel.onchange=function(){onAgCl(cliSel);refreshPackageChoice();extraServices.querySelectorAll(".ag-extra-service-row").forEach(function(r){if(r.refreshPackages)r.refreshPackages()})};
+  tmInp.onchange=recalcSchedule;
+  recalcSchedule();
 
   var brow=ce("div","brow");
   var bc=ce("button","btn bou");bc.textContent="Cancelar";bc.onclick=function(){oM(false,"m2")};
@@ -9467,18 +9471,22 @@ function svAg(editId){
   var clientId=clObj?clObj.id:(existingAg&&existingAg.clientId)||"";
   var clientName=clObj?clObj.name:(existingAg&&existingAg.clientName)||"";
   var date=gi("agdt").value,time=gi("agtm").value;
+  var usePackage=!!(gi("ag-use-package")&&gi("ag-use-package").checked),packageInstanceId=usePackage&&gi("ag-package-id")?gi("ag-package-id").value:"";
+  if(usePackage&&!availablePackageCredits(clientId,svId).some(function(p){return String(p.id)===String(packageInstanceId)})){alert("Escolha um pacote ativo com crédito disponível.");return}
+  var scheduledServices=[{serviceId:svObj.id,name:svObj.name,originalValue:Number(svObj.price)||0,durationMin:serviceDurationMin(svObj),packageInstanceId:usePackage?packageInstanceId:null,paymentOrigin:usePackage?"package":"normal"}];
+  Array.from(document.querySelectorAll("#ag-extra-services .ag-extra-service-row")).forEach(function(r){var sid=r.querySelector(".ag-extra-service").value,s=(D.services||[]).find(function(x){return String(x.id)===String(sid)}),pkgId=r.querySelector(".ag-extra-package").value;if(s)scheduledServices.push({serviceId:s.id,name:s.name,originalValue:parseFloat(r.querySelector(".ag-extra-value").value)||Number(s.price)||0,durationMin:serviceDurationMin(s),packageInstanceId:pkgId||null,paymentOrigin:pkgId?"package":"normal"})});
+  var invalidPackage=scheduledServices.find(function(item){return item.packageInstanceId&&!availablePackageCredits(clientId,item.serviceId).some(function(p){return String(p.id)===String(item.packageInstanceId)})});if(invalidPackage){alert("O pacote selecionado para "+invalidPackage.name+" não possui crédito disponível.");return}
+  var displayName=scheduledServices.map(function(x){return x.name}).join(" + "),payableValue=scheduledServices.filter(function(x){return!x.packageInstanceId}).reduce(function(s,x){return s+x.originalValue},0),totalDuration=scheduledServices.reduce(function(s,x){return s+x.durationMin},0);sn=displayName;vl=Math.round(payableValue*100)/100;
   var endTimeEl=gi("agtm-end");
   var endTime=endTimeEl?endTimeEl.value:"";
   if(!endTime&&time){
     // Sugere fim = início + duração do serviço, se cadastrada — só sugestão, editável
-    var durMin=serviceDurationMin(svObj);
+    var durMin=totalDuration;
     var parts=time.split(":");var endD=new Date(2000,0,1,parseInt(parts[0]),parseInt(parts[1])+durMin);
     endTime=String(endD.getHours()).padStart(2,"0")+":"+String(endD.getMinutes()).padStart(2,"0");
   }
   var isFirstTime=gi("agft").checked;
   var notesEl=gi("agnt");var notes=notesEl?notesEl.value.trim():"";
-  var usePackage=!!(gi("ag-use-package")&&gi("ag-use-package").checked),packageInstanceId=usePackage&&gi("ag-package-id")?gi("ag-package-id").value:"";
-  if(usePackage&&!availablePackageCredits(clientId,svId).some(function(p){return String(p.id)===String(packageInstanceId)})){alert("Escolha um pacote ativo com crédito disponível.");return}
 
   // ── Conflito de horário (item 7) ────────────────────────────────
   // novoInicio < existenteFim E novoFim > existenteInicio — ignora cancelados/faltas/removidos
@@ -9503,11 +9511,11 @@ function svAg(editId){
     // Update existing record — do not create a new one
     D.agenda=(D.agenda||[]).map(function(a){
       return String(a.id)===String(editId)
-        ? Object.assign({},a,{clientId:clientId,clientName:clientName,service:sn,value:usePackage?0:vl,date:date,time:time,endTime:endTime,isFirstTime:isFirstTime,notes:notes,usePackage:usePackage,packageInstanceId:packageInstanceId||null,packageServiceId:usePackage?svObj.id:null})
+        ? Object.assign({},a,{clientId:clientId,clientName:clientName,service:sn,value:vl,scheduledServices:scheduledServices,scheduledOriginalValue:scheduledServices.reduce(function(s,x){return s+x.originalValue},0),date:date,time:time,endTime:endTime,isFirstTime:isFirstTime,notes:notes,usePackage:scheduledServices.some(function(x){return!!x.packageInstanceId}),packageInstanceId:packageInstanceId||null,packageServiceId:usePackage?svObj.id:null})
         : a;
     });
   }else{
-    (D.agenda=D.agenda||[]).unshift({id:Date.now(),clientId:clientId,clientName:clientName,service:sn,value:usePackage?0:vl,date:date,time:time,endTime:endTime,isFirstTime:isFirstTime,notes:notes,status:"pendente",usePackage:usePackage,packageInstanceId:packageInstanceId||null,packageServiceId:usePackage?svObj.id:null});
+    (D.agenda=D.agenda||[]).unshift({id:Date.now(),clientId:clientId,clientName:clientName,service:sn,value:vl,scheduledServices:scheduledServices,scheduledOriginalValue:scheduledServices.reduce(function(s,x){return s+x.originalValue},0),date:date,time:time,endTime:endTime,isFirstTime:isFirstTime,notes:notes,status:"pendente",usePackage:scheduledServices.some(function(x){return!!x.packageInstanceId}),packageInstanceId:packageInstanceId||null,packageServiceId:usePackage?svObj.id:null});
   }
   sv();oM(false,"m2");nav("calend")
 }
@@ -9542,7 +9550,7 @@ function oBaixa(id){
     alert("Este atendimento já foi concluído em "+(ag.completedAt?ag.completedAt.split("-").reverse().join("/"):"")+".");
     return;
   }
-  if(ag.usePackage){oCompletePackageAppointment(ag);return}
+  if(ag.usePackage&&!(ag.scheduledServices&&ag.scheduledServices.length>1)){oCompletePackageAppointment(ag);return}
   var now=new Date();
   var nowTime=String(now.getHours()).padStart(2,"0")+":"+String(now.getMinutes()).padStart(2,"0");
   var bd=gi("m1b");bd.innerHTML="";
@@ -9565,8 +9573,9 @@ function oBaixa(id){
   if(!agSvcMatch)svcOptsBase=svcOptsBase.concat([{id:"__orig",name:ag.service,price:ag.value||0}]); // renomeado/excluído — mantém disponível
 
   var svcRows=ce("div");svcRows.id="bx-svc-rows";bd.appendChild(svcRows);
-  function addSvcRow(preselName,preselVal){
+  function addSvcRow(preselName,preselVal,scheduledItem){
     var row=ce("div");row.className="bx-svc-row";row.style.cssText="display:flex;gap:6px;align-items:center;margin-bottom:6px";
+    row.dataset.packageInstanceId=scheduledItem&&scheduledItem.packageInstanceId||"";row.dataset.scheduledServiceId=scheduledItem&&scheduledItem.serviceId||"";row.dataset.originalValue=scheduledItem&&scheduledItem.originalValue!==undefined?scheduledItem.originalValue:"";
     var sel=ce("select","sel");sel.style.cssText="flex:1.4;margin-bottom:0";
     svcOptsBase.forEach(function(s){var o=ce("option");o.value=s.name;o.dataset.price=s.price||0;o.textContent=s.name;if(s.name===preselName)o.selected=true;sel.appendChild(o)});
     var vi=ce("input","inp");vi.type="number";vi.step="0.01";vi.style.cssText="width:90px;margin-bottom:0";
@@ -9575,10 +9584,10 @@ function oBaixa(id){
     vi.oninput=recalcOriginal;
     var rm=ce("button");rm.type="button";rm.textContent="✕";rm.style.cssText="background:#fee2e2;border:none;border-radius:6px;color:#dc2626;cursor:pointer;padding:8px 11px;font-size:13px;flex-shrink:0";
     rm.onclick=function(){row.remove();recalcOriginal()};
-    row.appendChild(sel);row.appendChild(vi);row.appendChild(rm);
+    row.appendChild(sel);row.appendChild(vi);if(row.dataset.packageInstanceId){var badge=ce("span");badge.style.cssText="font-size:9px;color:#166534;background:#dcfce7;border-radius:8px;padding:3px 5px";badge.textContent="Pacote";row.appendChild(badge)}row.appendChild(rm);
     svcRows.appendChild(row);
   }
-  addSvcRow(ag.service,ag.value);
+  if(ag.scheduledServices&&ag.scheduledServices.length)ag.scheduledServices.forEach(function(x){addSvcRow(x.name,x.packageInstanceId?0:x.originalValue,x)});else addSvcRow(ag.service,ag.value);
   var addSvcBtn=ce("button","btn bou");addSvcBtn.type="button";addSvcBtn.style.cssText="font-size:11.5px;padding:6px 12px;width:100%;margin-bottom:12px";
   addSvcBtn.textContent="+ Adicionar serviço";
   addSvcBtn.onclick=function(){addSvcRow(svcOptsBase[0]?svcOptsBase[0].name:"",0)};
@@ -9746,7 +9755,7 @@ function svBaixa(id){
   document.querySelectorAll("#bx-svc-rows .bx-svc-row").forEach(function(r){
     var sel=r.querySelector("select");var vi=r.querySelector("input[type=number]");
     var svcObj=(D.services||[]).find(function(s){return s.name===sel.value});
-    performedServices.push({serviceId:svcObj?svcObj.id:null,name:sel.value,value:parseFloat(vi.value)||0});
+    performedServices.push({serviceId:svcObj?svcObj.id:(r.dataset.scheduledServiceId||null),name:sel.value,value:parseFloat(vi.value)||0,originalValue:r.dataset.originalValue!==""?Number(r.dataset.originalValue):(parseFloat(vi.value)||0),packageInstanceId:r.dataset.packageInstanceId||null,paymentOrigin:r.dataset.packageInstanceId?"package":"normal"});
   });
   if(!performedServices.length){alert("Adicione ao menos um serviço realizado.");return}
 
@@ -9766,17 +9775,19 @@ function svBaixa(id){
     }
   }
   var finalValue=Math.max(0,Math.round((originalVal-discountValue)*100)/100);
+  var normalServices=performedServices.filter(function(x){return!x.packageInstanceId}),normalBase=normalServices.reduce(function(s,x){return s+(Number(x.value)||0)},0),allocatedCents=0,totalFinalCents=Math.round(finalValue*100);normalServices.forEach(function(x,i){var cents=i===normalServices.length-1?totalFinalCents-allocatedCents:(normalBase?Math.round(totalFinalCents*(Number(x.value)||0)/normalBase):0);allocatedCents+=cents;x.discountAllocated=Math.round(((Number(x.value)||0)-cents/100)*100)/100;x.finalAllocated=cents/100;x.analysisValue=x.finalAllocated});
+  performedServices.filter(function(x){return!!x.packageInstanceId}).forEach(function(x){var pkg=(D.servicePackages||[]).find(function(p){return String(p.id)===String(x.packageInstanceId)}),cr=p&&(p.credits||[]).find(function(c){return String(c.serviceId)===String(x.serviceId)});x.finalAllocated=0;x.discountAllocated=0;x.analysisValue=cr&&cr.allocatedUnit||0});
   var bundleDefinition=performedServices.length===1?(D.services||[]).find(function(s){return String(s.id)===String(performedServices[0].serviceId)&&serviceKind(s)!=="individual"}):null,bundleKind=bundleDefinition?serviceKind(bundleDefinition):null,bundleAllocation=bundleDefinition?proportionalServiceAllocation(bundleDefinition.items,finalValue):[];
   if(bundleKind==="combo")performedServices=bundleAllocation.map(function(x){return{serviceId:x.serviceId,name:x.serviceName,value:x.allocatedTotal,analysisValue:x.allocatedTotal,quantity:x.quantity,allocatedUnit:x.allocatedUnit}});
 
   // O atendimento continua PJ; o escopo financeiro segue a conta de destino.
-  var requestedPaymentMethod=gi("bx-pay-method")?gi("bx-pay-method").value:"",isDeferredPackage=requestedPaymentMethod==="PACOTE_ABERTO"&&bundleKind==="package",isPromissory=requestedPaymentMethod==="PROMISSORIA",isVoucherPayment=requestedPaymentMethod==="VOUCHER",receivedAtCompletion=isDeferredPackage||isVoucherPayment?0:isPromissory?Math.max(0,Math.round((parseFloat(gi("bx-prom-received")&&gi("bx-prom-received").value)||0)*100)/100):finalValue;
+  var requestedPaymentMethod=gi("bx-pay-method")?gi("bx-pay-method").value:"",isDeferredPackage=requestedPaymentMethod==="PACOTE_ABERTO"&&bundleKind==="package",isPromissory=requestedPaymentMethod==="PROMISSORIA",isVoucherPayment=requestedPaymentMethod==="VOUCHER",isCoveredOnly=finalValue<=0&&performedServices.some(function(x){return!!x.packageInstanceId}),receivedAtCompletion=isDeferredPackage||isVoucherPayment||isCoveredOnly?0:isPromissory?Math.max(0,Math.round((parseFloat(gi("bx-prom-received")&&gi("bx-prom-received").value)||0)*100)/100):finalValue;
   if(receivedAtCompletion>finalValue){alert("O valor recebido hoje não pode ser maior que o valor final do atendimento.");return}
-  var promissoryAmount=isPromissory?Math.max(0,Math.round((finalValue-receivedAtCompletion)*100)/100):0,paymentMethod=isPromissory&&receivedAtCompletion>0?(gi("bx-prom-method")?gi("bx-prom-method").value:""):requestedPaymentMethod,noImmediatePayment=isDeferredPackage||isVoucherPayment||(isPromissory&&receivedAtCompletion<=0);
+  var promissoryAmount=isPromissory?Math.max(0,Math.round((finalValue-receivedAtCompletion)*100)/100):0,paymentMethod=isPromissory&&receivedAtCompletion>0?(gi("bx-prom-method")?gi("bx-prom-method").value:""):requestedPaymentMethod,noImmediatePayment=isDeferredPackage||isVoucherPayment||isCoveredOnly||(isPromissory&&receivedAtCompletion<=0);
   var isCreditPayment=paymentMethod==="CREDITO_VISTA"||paymentMethod==="CREDITO_PARCELADO";
   var isMachinePayment=paymentMethod==="PIX_MAQUININHA"||paymentMethod==="DEBITO"||isCreditPayment;
   if(!noImmediatePayment&&paymentMethod!=="PIX"&&paymentMethod!=="Dinheiro"&&!isMachinePayment){alert("Selecione uma forma de pagamento válida.");return}
-  var paymentLabel=isDeferredPackage?"Pagamento posterior":isVoucherPayment?"Voucher":paymentMethod==="PIX_MAQUININHA"?"PIX pela maquininha":paymentMethod==="DEBITO"?"Débito":paymentMethod==="CREDITO_VISTA"?"Crédito à vista":paymentMethod==="CREDITO_PARCELADO"?"Crédito parcelado":paymentMethod;
+  var paymentLabel=isDeferredPackage?"Pagamento posterior":isCoveredOnly?"Pacote":isVoucherPayment?"Voucher":paymentMethod==="PIX_MAQUININHA"?"PIX pela maquininha":paymentMethod==="DEBITO"?"Débito":paymentMethod==="CREDITO_VISTA"?"Crédito à vista":paymentMethod==="CREDITO_PARCELADO"?"Crédito parcelado":paymentMethod;
   var selectedVoucher=null,allowExpiredVoucher=false;if(isVoucherPayment){selectedVoucher=(D.vouchers||[]).find(function(v){return String(v.id)===String(gi("bx-voucher")&&gi("bx-voucher").value)});if(!selectedVoucher){alert("Selecione o Voucher utilizado.");return}refreshVoucher(selectedVoucher);if(selectedVoucher.usageType==="linked"&&String(selectedVoucher.beneficiaryId)!==String(ag.clientId)){alert("Este Voucher está vinculado a outra beneficiária.");return}if(finalValue>selectedVoucher.balance){alert("O Voucher possui "+R(selectedVoucher.balance)+" e não cobre integralmente este atendimento de "+R(finalValue)+". Pagamento misto ainda não está disponível com segurança.");return}if(selectedVoucher.status==="Vencido"){allowExpiredVoucher=confirm("Este Voucher venceu em "+selectedVoucher.expiryDate.split("-").reverse().join("/")+" e possui "+R(selectedVoucher.balance)+" de saldo.\n\nOK: Permitir utilização\nCancelar: Não utilizar");if(!allowExpiredVoucher)return}}
   var duplicateFinancialTx=(D.pf.transactions||[]).concat(D.pj.transactions||[]).find(function(t){return String(t.appointmentId)===String(id)});
   var duplicateReceivable=(D.machineReceivables||[]).find(function(r){return String(r.appointmentId)===String(id)});
@@ -9812,6 +9823,7 @@ function svBaixa(id){
     machineCalc=calcTaxaMaquina(selectedMachine,receivedAtCompletion,{metodo:machineMethod,parcelas:installmentCount,antecipar:automaticAnticipation});machineDays=Number(machineDeadline);machineIntervalDays=Number(machineIntervalDays)||0
   }
   var completionId="cpl-"+id+"-"+Date.now(),transactionId=isDeferredPackage?genUUID():noImmediatePayment?null:genUUID(),receivableId=isMachinePayment?("mrc-"+completionId+"-1"):null,promissoryId=promissoryAmount>0?("prm-"+completionId):null;
+  var packagePerformed=performedServices.filter(function(x){return!!x.packageInstanceId});for(var pvi=0;pvi<packagePerformed.length;pvi++){var pv=packagePerformed[pvi],validPkg=(D.servicePackages||[]).find(function(p){return String(p.id)===String(pv.packageInstanceId)}),validCredit=validPkg&&(validPkg.credits||[]).find(function(cr){return String(cr.serviceId)===String(pv.serviceId)&&Math.max(0,(cr.original||0)-(cr.used||0)-(cr.forfeited||0))>0});if(!validCredit){alert("O crédito de pacote para "+pv.name+" não está mais disponível.");return}}
   var promCount=0,promDueValues=[];if(promissoryAmount>0){promCount=Math.max(1,parseInt(gi("bx-prom-count")&&gi("bx-prom-count").value)||1);promDueValues=Array.from(document.querySelectorAll("#bx-prom-dates .bx-prom-due")).map(function(x){return x.value});if(promDueValues.length!==promCount||promDueValues.some(function(x){return!x})){alert("Informe todas as datas de vencimento da Promissória.");return}}
 
   var scheduledSvcObj=(D.services||[]).find(function(s){return s.name===ag.service});
@@ -9831,6 +9843,7 @@ function svBaixa(id){
     if(durationMin<0)durationMin+=1440
   }
   var notasVal=gi("bx-notas")?gi("bx-notas").value.trim():"";
+  packagePerformed.forEach(function(x){consumePackageCredit(x.packageInstanceId,x.serviceId,"realized",ag.id,endDate)});
 
   // Atualiza estatísticas de visita da cliente — não é entrada financeira,
   // é sobre o trabalho realizado (ltv aqui reflete faturamento, não caixa).
@@ -11286,11 +11299,12 @@ function availablePackageCredits(clientId,serviceId){
 }
 function consumePackageCredit(packageId,serviceId,kind,appointmentId,date){
   var p=(D.servicePackages||[]).find(function(x){return String(x.id)===String(packageId)});if(!p)return null;
-  if((p.history||[]).some(function(h){return String(h.appointmentId)===String(appointmentId)&&h.kind!=="purchase"}))return p;
+  if((p.history||[]).some(function(h){return String(h.appointmentId)===String(appointmentId)&&String(h.serviceId)===String(serviceId)&&h.kind===kind}))return p;
   var credit=(p.credits||[]).find(function(c){return String(c.serviceId)===String(serviceId)}),remaining=credit?Math.max(0,(credit.original||0)-(credit.used||0)-(credit.forfeited||0)):0;if(!credit||remaining<1)return null;
   if(kind==="realized")credit.used=(credit.used||0)+1;else credit.forfeited=(credit.forfeited||0)+1;
   (p.history=p.history||[]).push({id:genUUID(),date:date||tod(),kind:kind,serviceId:serviceId,serviceName:credit.serviceName,appointmentId:appointmentId,allocatedValue:credit.allocatedUnit||0});refreshServicePackage(p);return p
 }
+function consumeScheduledPackageCredits(ag,kind,reasonLabel){var items=(ag.scheduledServices&&ag.scheduledServices.length)?ag.scheduledServices.filter(function(x){return!!x.packageInstanceId}):(ag.usePackage?[{serviceId:ag.packageServiceId,name:ag.service,packageInstanceId:ag.packageInstanceId}]:[]),consumed=[];items.forEach(function(x){if(confirm("Consumir o crédito de "+x.name+" por "+reasonLabel+"?\n\nOK: consumir crédito\nCancelar: não consumir")){var p=consumePackageCredit(x.packageInstanceId,x.serviceId,kind,ag.id,tod());if(p)consumed.push(x.serviceId)}});return consumed}
 function oServiceBundleForm(kind,existing){
   var bd=gi("m1b");bd.innerHTML="";var title=ce("div","mt");title.textContent=(existing?"Editar ":"Novo ")+(kind==="package"?"pacote":"combo");bd.appendChild(title);function lbl(x){var l=ce("label","lbl");l.textContent=x;return l}
   bd.appendChild(lbl("Nome"));var name=ce("input","inp");name.id="bundle-name";name.value=existing&&existing.name||"";name.style.marginBottom="8px";bd.appendChild(name);
