@@ -7432,7 +7432,7 @@ function isAppointmentCompletionTransaction(t){
 }
 function promissoryBalance(p){return Math.max(0,Math.round((p&&p.installments||[]).reduce(function(s,x){return s+(Number(x.balance)||0)},0)*100)/100)}
 function promissoryPaid(p){return Math.max(0,Math.round((((p&&p.originalAmount)||0)-promissoryBalance(p))*100)/100)}
-function clientPromissoryBalance(clientId){return Math.round((D.promissories||[]).filter(function(p){return String(p.clientId)===String(clientId)}).reduce(function(s,p){return s+promissoryBalance(p)},0)*100)/100}
+function clientPromissoryBalance(clientId){var promissories=(D.promissories||[]).filter(function(p){return String(p.clientId)===String(clientId)}).reduce(function(s,p){return s+promissoryBalance(p)},0),packages=(D.servicePackages||[]).filter(function(p){return String(p.clientId)===String(clientId)}).reduce(function(s,p){return s+packageBalanceDue(p)},0);return Math.round((promissories+packages)*100)/100}
 function isRevenueEntry(t){return!!(t&&t.type==="entrada"&&!t.nonRevenue)}
 function promissoryStatus(p){
   var bal=promissoryBalance(p);if(bal<=0)return"Quitada";
@@ -10124,7 +10124,7 @@ function verFichaCliente(clientId){
   }
 
   function renderPromissories(){
-    promBody.innerHTML="";var items=(D.promissories||[]).filter(function(p){return String(p.clientId)===String(clientId)}).map(refreshPromissory),openTotal=items.reduce(function(s,p){return s+promissoryBalance(p)},0),events=[];
+    promBody.innerHTML="";var items=(D.promissories||[]).filter(function(p){return String(p.clientId)===String(clientId)}).map(refreshPromissory),openTotal=clientPromissoryBalance(clientId),events=[];
     var total=ce("div");total.style.cssText="background:#fffbeb;border:1px solid #fde68a;border-radius:12px;padding:14px;margin-bottom:12px;font-size:12px;color:#92400e";total.innerHTML="Saldo total em aberto<br><b style='font-size:22px;display:inline-block;margin-top:2px'>"+R(openTotal)+"</b>";promBody.appendChild(total);
     var initialBtn=ce("button","btn bou");initialBtn.style.cssText="width:100%;margin-bottom:12px";initialBtn.textContent="+ Saldo inicial";initialBtn.onclick=function(){oInitialPromissory(clientId)};promBody.appendChild(initialBtn);
     if(!items.length){var empty=ce("div");empty.style.cssText="text-align:center;color:#9ca3af;padding:20px;font-size:12px";empty.textContent="Nenhuma Promissória para esta cliente.";promBody.appendChild(empty);return}
