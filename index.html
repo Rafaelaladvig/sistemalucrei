@@ -12017,4 +12017,124 @@ window.onload=function(){
   // Sidebar panel switch
   var ppf=gi("psb-pf"),ppj=gi("psb-pj"),sbl=gi("sb-logout");
   if(ppf)ppf.onclick=function(){panel="pf";tab="dash";renderSB();renderBN();nav("dash");setTimeout(checkVencimentosPF,300)};
-  if(ppj)ppj.onclick=function(){panel="pj";tab="dash";renderSB();renderBN();nav("dash");checkPJT
+  if(ppj)ppj.onclick=function(){panel="pj";tab="dash";renderSB();renderBN();nav("dash");checkPJTour()};
+  if(sbl)sbl.onclick=logout;
+  // Mobile hamburger
+  var tbm=gi("tb-menu");if(tbm)tbm.onclick=function(){var sb=gi("sb");if(sb)sb.classList.toggle("sb-open")};
+  // Auto-logout after 20 min inactivity, with 60s confirmation warning
+  var _inactTimer=null;       // fires after 20 min of no activity
+  var _inactWarnEl=null;      // the warning modal element
+  var _inactCountdown=null;   // 60s countdown interval
+  var _inactSecsLeft=60;
+
+  function inactBuildModal(){
+    if(_inactWarnEl)return _inactWarnEl;
+    var ov=document.createElement("div");
+    ov.id="inact-ovl";
+    ov.style.cssText="position:fixed;inset:0;background:rgba(8,4,20,.6);z-index:9000;display:none;align-items:center;justify-content:center;backdrop-filter:blur(4px)";
+    var box=document.createElement("div");
+    box.style.cssText="background:#fff;border-radius:18px;padding:24px 22px;width:300px;max-width:90vw;box-shadow:0 10px 40px rgba(0,0,0,.25);text-align:center;font-family:inherit";
+    box.innerHTML="<div style='font-size:32px;margin-bottom:10px'>⏰</div>"
+      +"<div style='font-size:15px;font-weight:700;color:#1f2937;margin-bottom:8px'>Tudo certo por aí?</div>"
+      +"<div style='font-size:12.5px;color:#6b7280;line-height:1.6;margin-bottom:4px'>Detectamos 20 minutos sem atividade.<br>Deseja continuar utilizando o sistema?</div>"
+      +"<div id='inact-cd' style='font-size:11px;color:#9ca3af;margin-bottom:16px'>Encerrando em 60s...</div>"
+      +"<div style='display:flex;gap:8px'>"
+      +"<button id='inact-end' style='flex:1;background:#f3f4f6;border:none;border-radius:10px;padding:11px;cursor:pointer;color:#374151;font-weight:500;font-family:inherit;font-size:13px'>Encerrar sessão</button>"
+      +"<button id='inact-cont' style='flex:1;background:#4A6741;border:none;border-radius:10px;padding:11px;cursor:pointer;color:#fff;font-weight:600;font-family:inherit;font-size:13px'>Continuar</button>"
+      +"</div>";
+    ov.appendChild(box);
+    document.body.appendChild(ov);
+    _inactWarnEl=ov;
+    document.getElementById("inact-cont").onclick=inactContinue;
+    document.getElementById("inact-end").onclick=inactLogoutNow;
+    return ov;
+  }
+
+  function inactShowWarning(){
+    var ov=inactBuildModal();
+    ov.style.display="flex";
+    _inactSecsLeft=60;
+    var cdEl=document.getElementById("inact-cd");
+    if(cdEl)cdEl.textContent="Encerrando em "+_inactSecsLeft+"s...";
+    clearInterval(_inactCountdown);
+    _inactCountdown=setInterval(function(){
+      _inactSecsLeft--;
+      if(cdEl)cdEl.textContent="Encerrando em "+Math.max(_inactSecsLeft,0)+"s...";
+      if(_inactSecsLeft<=0){
+        clearInterval(_inactCountdown);
+        inactLogoutNow();
+      }
+    },1000);
+  }
+
+  function inactHideWarning(){
+    if(_inactWarnEl)_inactWarnEl.style.display="none";
+    clearInterval(_inactCountdown);
+  }
+
+  function inactContinue(){
+    inactHideWarning();
+    resetInact();
+  }
+
+  function inactLogoutNow(){
+    inactHideWarning();
+    if(_email){
+      logout();
+    }
+  }
+
+  function resetInact(){
+    clearTimeout(_inactTimer);
+    _inactTimer=setTimeout(function(){
+      if(_email){inactShowWarning()}
+    },20*60*1000);// 20 minutes
+  }
+  ["mousedown","keydown","touchstart","scroll","click","mousemove"].forEach(function(ev){
+    document.addEventListener(ev,function(){
+      // Activity while the warning is visible cancels the auto-logout and resumes the normal timer
+      if(_inactWarnEl&&_inactWarnEl.style.display==="flex")return; // ignore background activity while modal is up — user must choose explicitly
+      resetInact();
+    },{passive:true});
+  });
+  resetInact();
+
+
+
+// ══ CANCELAR ASSINATURA ════════════════════════════════════════
+// ══ SETUP & TOUR ════════════════════════════════════════════════
+
+
+  // Check session
+  var sess=getSession();
+  if(sess&&sess.email){
+    var u=getUsers(),usr=u[sess.email];
+    if(usr){
+      ldUser(sess.email);
+      D.userName=usr.name;D.userEmail=usr.email||sess.email;D.perfil=usr.perfil||"autonoma";
+      // Verificar status da assinatura na sessão salva
+      var _subSt=usr.subscriptionStatus||usr.status||null;
+      if(_subSt==="canceled"||_subSt==="suspended"||_subSt==="inactive"){
+        clearSession();showAuth();setMode("login");
+        setTimeout(function(){showErr("Sua assinatura está inativa. Entre em contato: (67) 99117-4813")},200);
+        return;
+      }
+      if(_subSt==="pending"){
+        clearSession();showAuth();setMode("login");
+        setTimeout(function(){showErr("Acesso não encontrado. Para acessar o Lucrei, assine um plano em: rafaelaladvig.github.io/paginadevendas")},200);
+        return;
+      }
+      saveSession(sess.email);
+      startAuthenticatedApp();
+      return
+    }
+  }
+  // Verificar retorno de pagamento do Asaas (URL params)
+  processAsaasReturn().catch(function(){});
+  showAuth()
+};
+</script>
+
+
+</body>
+</html>
