@@ -1210,7 +1210,16 @@ function ldUser(email){
 async function startAuthenticatedApp(){
   var owner=syncOwnerEmail();if(!owner)return;
   _bootstrapInProgress=true;_bootstrapOwner=owner;_snapshotWritesEnabled=false;
-  var result=await syncFromCloud({bootstrap:true});
+  var result=null;
+  try{
+    result=await syncFromCloud({bootstrap:true});
+  }catch(e){
+    // A indisponibilidade da nuvem não pode deixar a sessão autenticada em
+    // uma tela vazia. O cache local já foi carregado por ldUser(); seguimos
+    // com ele sem liberar gravação remota automática.
+    console.error("Falha na inicialização sincronizada; abrindo dados locais:",e);
+    result={serverChecked:false,blocked:true,bootstrapError:true};
+  }
   if(syncOwnerEmail()!==owner)return;
   // boot pode executar migrações locais que chamam sv(); a guarda de bootstrap
   // impede que elas gravem/enviem antes de a carga inicial terminar.
