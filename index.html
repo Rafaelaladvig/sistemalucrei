@@ -6998,7 +6998,7 @@ function rLunaTab(c,mk){
 "Planejamento: na aba Planejamento defina limites de gasto por categoria do negócio. "+
 "Investimentos: na aba Investimentos registre aportes e resgates do negócio, separados das finanças pessoais. "+
 "Cancelar assinatura: em Configurações, na zona de perigo, toque em Cancelar assinatura, informe o motivo e confirme. "+
-"INDICADORES — explicações simples quando perguntada: Faturamento bruto é o valor total recebido pelos serviços antes de descontos ou taxas. Receita líquida é o que sobra depois de descontar taxas e despesas variáveis ligadas à venda. Despesas fixas são gastos que se repetem todo mês, como aluguel. Despesas variáveis mudam conforme o volume de atendimentos. Lucro líquido é tudo que sobrou depois de pagar todas as despesas. Margem de lucro é o percentual do faturamento que vira lucro. Meta x realizado compara o que foi faturado com a meta definida. Crescimento compara o faturamento do mês atual com o mês anterior. Custo por atendimento é quanto, em média, cada atendimento custa para o negócio. Ticket médio é o valor médio recebido por atendimento. "+
+"INDICADORES — explicações simples quando perguntada: Entradas recebidas são todo dinheiro que efetivamente entrou nas contas do negócio no período. Resultado de caixa é entradas recebidas menos despesas fixas e variáveis efetivamente pagas. Faturamento total é tudo que o negócio vendeu ou realizou no período, mesmo que ainda não tenha recebido. Despesas fixas pagas são gastos fixos realmente pagos; despesas variáveis pagas são saídas realizadas que variam com a operação. Lucro líquido é o faturamento total menos as despesas reconhecidas no painel. Margem de lucro é o percentual do faturamento que vira lucro. Meta x realizado compara o faturamento total com a meta definida. Crescimento compara o faturamento total do mês atual com o mês anterior. Custo por atendimento é quanto, em média, cada atendimento concluído custa para o negócio. Ticket médio é o faturamento total dividido pelos atendimentos concluídos. "+
 "Você é a central de ajuda oficial do sistema PJ — sempre que a profissional perguntar como fazer algo, explique o caminho real dentro do app.";
   var shorts=isPF?["Como estou esse mês?","Onde gasto mais?","Me dá uma dica","Analise meu saldo"]:["Como está o negócio?","Estou no lucro?","Dica para crescer","Analise meu mês"];
   var lw=ce("div","lw");lw.style.height=(window.innerHeight-120)+"px";
@@ -7814,24 +7814,48 @@ function rCalend(c,mk){
 
 
 
+function dashboardTxAccountIsPJ(t){
+  if(!t)return false;var acc=(D.accounts||[]).find(function(a){return String(a.id)===String(t.accountId)});
+  if(acc){var ctx=accountContext(acc);return ctx==="pj"||ctx==="both"}
+  var declared=String(t.accountContext||"").toLowerCase();if(declared)return declared==="pj"||declared==="both";
+  // Compatibilidade: transações antigas já guardadas no livro PJ podem não
+  // ter accountId. Só são aceitas quando há evidência de recebimento real.
+  return!!(t.accountName||t.payMethod==="Dinheiro"||t.paymentMethod==="Dinheiro")
+}
+function dashboardNonOperatingMovement(t){var txt=[t&&t.source,t&&t.category,t&&t.cat,t&&t.description,t&&t.type].join(" ").toLowerCase();return/transfer|transferência|aporte|empr[eé]stimo/.test(txt)}
+function dashboardCashEntries(mk){return(D.pj.transactions||[]).filter(function(t){return t&&t.type==="entrada"&&t.date&&t.date.startsWith(mk)&&!t.pending&&!t.accrualOnly&&(Number(t.amount)||0)>0&&dashboardTxAccountIsPJ(t)&&!dashboardNonOperatingMovement(t)})}
+function dashboardPaidExpenses(mk){return(D.pj.transactions||[]).filter(function(t){return t&&t.type==="saida"&&t.date&&t.date.startsWith(mk)&&!t.pending&&!t.accrualOnly&&(t.category||t.cat)!=="Investimento"&&(Number(t.amount)||0)>0&&dashboardTxAccountIsPJ(t)&&!dashboardNonOperatingMovement(t)})}
+function dashboardCompletedAppointments(mk){var seen={};return(D.agenda||[]).filter(function(a){var d=a&&(a.completedAt||a.date);if(!a||appointmentStatus(a)!=="concluido"||!d||!d.startsWith(mk))return false;var id=String(a.id||a.completionId||d+"|"+(a.clientId||"")+"|"+(a.time||""));if(seen[id])return false;seen[id]=true;return true})}
+function dashboardPerformedServiceItems(a){
+  var items=[];(a&&a.performedServices||[]).forEach(function(s){if(!s)return;var packageInstanceId=s.packageInstanceId||((a.paymentMethod==="Pacote"&&a.packageInstanceId)?a.packageInstanceId:null);if(s.kind==="package"&&!packageInstanceId){if(s.packageSessionServiceId)items.push({name:s.packageSessionServiceName||"Serviço do pacote",serviceId:s.packageSessionServiceId,quantity:1,amount:0,appointment:a});return}var q=Math.max(1,Number(s.quantity)||1);items.push({name:s.name||s.serviceName||a.performedServiceName||a.serviceRealizado||a.service||"Serviço",serviceId:s.serviceId,quantity:q,amount:packageInstanceId?0:Number(s.finalAllocated!==undefined?s.finalAllocated:s.analysisValue!==undefined?s.analysisValue:s.value)||0,packageInstanceId:packageInstanceId,appointment:a})});
+  if(!items.length&&!a.packageSale){items.push({name:a.performedServiceName||a.serviceRealizado||a.service||"Serviço",serviceId:a.performedServiceId,quantity:1,amount:(a.paymentMethod==="Pacote"||a.paymentMethod==="Voucher")?0:Number(a.finalValue)||0,appointment:a})}return items
+}
+function dashboardServicesRealized(mk){return dashboardCompletedAppointments(mk).reduce(function(n,a){return n+dashboardPerformedServiceItems(a).reduce(function(s,x){return s+(Number(x.quantity)||1)},0)},0)}
+function dashboardRevenueEvents(mk){
+  var events=[],appointmentKeys={},packageKeys={},voucherKeys={};
+  dashboardCompletedAppointments(mk).forEach(function(a){var key=String(a.completionId||a.id);appointmentKeys[String(a.id)]=true;appointmentKeys[key]=true;var voucherUse=a.paymentMethod==="Voucher"||!!a.voucherId;dashboardPerformedServiceItems(a).forEach(function(item){if(item.packageInstanceId||voucherUse)return;var amount=Number(item.amount)||0;if(amount>0)events.push({kind:"service",id:key+"|"+(item.serviceId||item.name),date:a.completedAt||a.date,amount:amount,label:item.name,appointmentId:a.id,clientId:a.clientId})})});
+  (D.servicePackages||[]).forEach(function(p){if(!(p.purchaseDate||"").startsWith(mk))return;var id=String(p.id);if(packageKeys[id])return;packageKeys[id]=true;var amount=Number(packageSaleValue(p))||0;if(amount>0)events.push({kind:"package",id:id,date:p.purchaseDate,amount:amount,label:p.name||"Pacote",appointmentId:p.purchaseAppointmentId,clientId:p.clientId})});
+  (D.vouchers||[]).forEach(function(v){var date=v.purchaseDate||(v.history||[]).find(function(h){return h.kind==="sale"})&&v.history.find(function(h){return h.kind==="sale"}).date;if(!date||!date.startsWith(mk)||v.draft)return;var id=String(v.id);if(voucherKeys[id])return;voucherKeys[id]=true;var amount=Number(v.originalValue)||Number(v.saleValue)||0;if(amount>0)events.push({kind:"voucher",id:id,date:date,amount:amount,label:"Venda de Voucher "+voucherCodeLabel(v),clientId:v.buyerId})});
+  (D.pj.transactions||[]).forEach(function(t){if(!t||t.type!=="entrada"||!t.date||!t.date.startsWith(mk)||t.pending||t.accrualOnly||t.nonRevenue||!dashboardTxAccountIsPJ(t)||dashboardNonOperatingMovement(t))return;var linked=t.appointmentId||t.completionId||t.servicePackageId||t.packagePaymentId||t.voucherId||t.voucherSaleId;if(linked)return;var source=String(t.source||"");if(source==="promissory_payment"||source==="package_payment"||source==="voucher_sale"||source==="package_activation")return;var amount=Number(t.amount)||0;if(amount>0)events.push({kind:"manual",id:String(t.id),date:t.date,amount:amount,label:t.description||t.category||t.cat||"Receita",clientId:t.clientId})});return events
+}
+function dashboardRevenueTotal(mk){return Math.round(dashboardRevenueEvents(mk).reduce(function(s,e){return s+e.amount},0)*100)/100}
+
 function rPJDash(c,mk){
   // ── Data ──────────────────────────────────────────────────────
   var txs=(D.pj.transactions||[]).filter(function(t){return t.date&&t.date.startsWith(mk)&&!t.pending});
-  var rec=txs.filter(isRevenueEntry);
-  var desp=txs.filter(function(t){return t.type==="saida"&&(t.category||t.cat)!=="Investimento"});
-  var fat=rec.reduce(function(s,t){return s+t.amount},0);
+  var entradasRecebidasTx=dashboardCashEntries(mk),desp=dashboardPaidExpenses(mk),revenueEvents=dashboardRevenueEvents(mk),completedAppointments=dashboardCompletedAppointments(mk);
+  var rec=txs.filter(isRevenueEntry); // compatibilidade de relatórios secundários; não alimenta os KPIs centrais
+  var entradasRecebidas=entradasRecebidasTx.reduce(function(s,t){return s+(Number(t.amount)||0)},0);
+  var fat=dashboardRevenueTotal(mk);
   var tD=desp.reduce(function(s,t){return s+t.amount},0);
-  var menTot=(D.maquinas||[]).reduce(function(s,m){return s+(m.mensalidade||0)},0);
-  tD+=menTot;
-  var fixas=desp.filter(function(t){return t.fixed}).reduce(function(s,t){return s+t.amount},0);
-  var variaveis=desp.filter(function(t){return !t.fixed}).reduce(function(s,t){return s+t.amount},0);
-  var pL=desp.filter(function(t){return(t.category||t.cat)==="Pró-labore"}).reduce(function(s,t){return s+t.amount},0);
-  var taxasMaq=rec.reduce(function(s,t){return s+(t.taxaValor||0)},0);
-  var descontos=rec.reduce(function(s,t){return s+(t.discount||0)},0);
-  var recLiquida=fat-taxasMaq-descontos;
+  var menTot=0; // mensalidade configurada não é pagamento; só entra quando houver transação efetivamente paga
+  var fixas=desp.filter(function(t){return t.fixed===true}).reduce(function(s,t){return s+t.amount},0);
+  // Compatibilidade legada: fixed ausente sempre foi tratado como variável.
+  var variaveis=desp.filter(function(t){return t.fixed!==true}).reduce(function(s,t){return s+t.amount},0);
+  var resultadoCaixa=entradasRecebidas-fixas-variaveis;
   var lucroLiq=fat-tD;
   var margem=fat>0?lucroLiq/fat*100:0;
-  var cli=rec.reduce(function(s,t){return s+(t.clients||1)},0);
+  var cli=completedAppointments.length,servicosRealizados=dashboardServicesRealized(mk),serviceProduction=completedAppointments.reduce(function(out,a){dashboardPerformedServiceItems(a).forEach(function(x){for(var q=0;q<(Number(x.quantity)||1);q++)out.push(x)});return out},[]);
   var ticket=cli>0?fat/cli:0;
   var custoPorAtend=cli>0?tD/cli:0;
   var despPct=fat>0?tD/fat*100:0;
@@ -7850,14 +7874,14 @@ function rPJDash(c,mk){
   var pmMK=pmY+"-"+String(pmM+1).padStart(2,"0");
   var pmTxs=(D.pj.transactions||[]).filter(function(t){return t.date&&t.date.startsWith(pmMK)&&!t.pending});
   var pmRec=pmTxs.filter(isRevenueEntry);
-  var pmFat=pmRec.reduce(function(s,t){return s+t.amount},0);
-  var pmCli=pmRec.reduce(function(s,t){return s+(t.clients||1)},0);
+  var pmFat=dashboardRevenueTotal(pmMK);
+  var pmCli=dashboardCompletedAppointments(pmMK).length;
   var growth=pmFat>0?(fat-pmFat)/pmFat*100:0;
   // Client data
   var allClients=D.clients||[];
-  var ftrs=rec.filter(function(t){return t.isFirstTime}).length;
+  var ftrs=completedAppointments.filter(function(a){return a.isFirstTime}).length;
   var recurrentIds=new Set();
-  rec.forEach(function(t){if(t.clientId&&!t.isFirstTime)recurrentIds.add(String(t.clientId))});
+  completedAppointments.forEach(function(a){if(a.clientId&&!a.isFirstTime)recurrentIds.add(String(a.clientId))});
   var recurrentCount=recurrentIds.size;
   var churnCount=allClients.filter(function(cl){
     // 1. Usar lastVisit se disponível
@@ -7877,8 +7901,8 @@ function rPJDash(c,mk){
   var retentionRate=cli>0?Math.round(recurrentCount/cli*100):0;
   var ltv=allClients.length>0?Math.round(allClients.reduce(function(s,cl){return s+(cl.ltv||0)},0)/allClients.length):0;
   // Duration
-  var durationTxs=rec.filter(function(t){return t.durationMin>0});
-  var avgDuration=durationTxs.length>0?Math.round(durationTxs.reduce(function(s,t){return s+t.durationMin},0)/durationTxs.length):0;
+  var durationTxs=completedAppointments.filter(function(a){return a.durationMin>0});
+  var avgDuration=durationTxs.length>0?Math.round(durationTxs.reduce(function(s,a){return s+a.durationMin},0)/durationTxs.length):0;
   var horasTrab=durationTxs.reduce(function(s,t){return s+t.durationMin},0)/60;
   var fatHora=horasTrab>0?fat/horasTrab:0;
   var horasDisp=plan.horasDisponiveis||0;
@@ -7956,49 +7980,38 @@ function rPJDash(c,mk){
     if(!svcs.length&&D.services&&D.services.length)svcs=D.services.map(function(s){return{name:s.name,icon:s.icon}});
 
     w.appendChild(kpiGrid([
-      kpiCard({l:"Faturamento Bruto",v:R(fat),s:cli+" atendimentos",col:"#059669",
-        tip:"Soma de tudo que entrou no caixa no mês, antes de qualquer desconto ou dedução. É o ponto de partida para calcular todos os outros indicadores.",
+      kpiCard({l:"Entradas recebidas",v:R(entradasRecebidas),s:entradasRecebidasTx.length+" movimentações realizadas",col:"#059669",
+        tip:"Mostra todo o dinheiro que efetivamente entrou nas contas do negócio no período, inclusive recebimentos de valores faturados anteriormente.",
         onclick:function(){
-          var rows=[["Total de entradas",R(fat),"#059669"],["Nº de atendimentos",String(cli)],["Ticket médio",R(ticket),"#059669"]];
-          if(svcs.length){
-            rows.push(["—","—"]);
-            svcs.forEach(function(sv){
-              var svR=rec.filter(function(t){return(t.cat||t.category)===sv.name});
-              var svFat=svR.reduce(function(s,t){return s+t.amount},0);
-              var svCli=svR.reduce(function(s,t){return s+(t.clients||1)},0);
-              if(svFat>0)rows.push([sv.name+" ("+svCli+"x)",R(svFat)+"  "+Math.round(svFat/fat*100)+"%","#059669"])
-            })
-          }
-          openReport("💰 Faturamento Bruto",rows)
+          var rows=entradasRecebidasTx.slice().sort(function(a,b){return(a.date||"").localeCompare(b.date||"")}).map(function(t){return[((t.date||"").split("-").reverse().join("/"))+" · "+(t.description||t.category||t.cat||"Entrada")+(t.nonRevenue?" · recebimento anterior":""),R(t.amount),"#059669"]});rows.push(["Total recebido",R(entradasRecebidas),"#059669"]);openReport("💰 Entradas recebidas",rows)
         }}),
-      kpiCard({l:"Despesas Fixas",v:R(fixas),s:"não variam com o volume",col:"#dc2626",
-        tip:"Gastos que existem todo mês independente do volume de trabalho: aluguel, internet, sistemas, salários fixos, pró-labore.",
+      kpiCard({l:"Despesas fixas pagas",v:R(fixas),s:"efetivamente pagas",col:"#dc2626",
+        tip:"Mostra as despesas fixas que foram realmente pagas no período.",
         onclick:function(){
           var rows=[];
           var fixasByCat={};desp.filter(function(t){return t.fixed}).forEach(function(t){var k=t.cat||t.category||"Outros";fixasByCat[k]=(fixasByCat[k]||0)+t.amount});
           Object.keys(fixasByCat).sort(function(a,b){return fixasByCat[b]-fixasByCat[a]}).forEach(function(k){rows.push([k,R(fixasByCat[k]),"#dc2626"])});
-          if(menTot>0)rows.push(["Mensalidades máquinas",R(menTot),"#dc2626"]);
           if(!rows.length)rows.push(["Nenhuma despesa fixa registrada","—","#9ca3af"]);
-          openReport("🔒 Despesas Fixas",rows,"Dica: Despesas fixas são a base do seu ponto de equilíbrio. Quanto menor, mais saudável a operação.")
+          openReport("🔒 Despesas fixas pagas",rows,"Somente saídas efetivamente pagas no mês são consideradas.")
         }}),
-      kpiCard({l:"Despesas Variáveis",v:R(variaveis),s:"conforme volume",col:"#f59e0b",
-        tip:"Gastos que variam conforme o volume de trabalho: insumos, comissões, material descartável, combustível extra.",
+      kpiCard({l:"Despesas variáveis pagas",v:R(variaveis),s:"efetivamente pagas",col:"#f59e0b",
+        tip:"Mostra as despesas variáveis que foram realmente pagas no período.",
         onclick:function(){
           var rows=[];
           var varByCat={};desp.filter(function(t){return !t.fixed}).forEach(function(t){var k=t.cat||t.category||"Outros";varByCat[k]=(varByCat[k]||0)+t.amount});
           Object.keys(varByCat).sort(function(a,b){return varByCat[b]-varByCat[a]}).forEach(function(k){rows.push([k,R(varByCat[k]),"#f59e0b"])});
           if(!rows.length)rows.push(["Nenhuma despesa variável registrada","—","#9ca3af"]);
-          openReport("📊 Despesas Variáveis",rows,"Dica: Monitore insumos e comissões — geralmente representam 10-20% do faturamento saudável.")
+          openReport("📊 Despesas variáveis pagas",rows,"Registros antigos sem classificação explícita permanecem como variáveis por compatibilidade.")
         }}),
-      kpiCard({l:"Receita Líquida",v:R(recLiquida),s:"após taxas e descontos",col:"#0369a1",
-        tip:"Faturamento bruto menos taxas de máquina (crédito/débito) e descontos concedidos. É o que efetivamente entrou no seu bolso.",
+      kpiCard({l:"Resultado de caixa",v:R(resultadoCaixa),s:"entradas menos saídas pagas",col:resultadoCaixa>=0?"#0369a1":"#dc2626",
+        tip:"Entradas recebidas menos despesas fixas e variáveis efetivamente pagas.",
         onclick:function(){
-          openReport("🔵 Receita Líquida",[
-            ["Faturamento bruto",R(fat),"#059669"],
-            ["Taxas de máquina",taxasMaq>0?"-"+R(taxasMaq):"R$ 0,00","#dc2626"],
-            ["Descontos concedidos",descontos>0?"-"+R(descontos):"R$ 0,00","#f59e0b"],
-            ["= Receita líquida",R(recLiquida),"#0369a1"]
-          ],"Quanto menor a diferença entre bruto e líquido, mais eficiente é sua operação de recebimento.")
+          openReport("🔵 Resultado de caixa",[
+            ["Entradas recebidas",R(entradasRecebidas),"#059669"],
+            ["Despesas fixas pagas","-"+R(fixas),"#dc2626"],
+            ["Despesas variáveis pagas","-"+R(variaveis),"#f59e0b"],
+            ["= Resultado de caixa",R(resultadoCaixa),resultadoCaixa>=0?"#0369a1":"#dc2626"]
+          ],"Taxas e descontos não são deduzidos novamente quando a entrada liquidada já está líquida.")
         }})
     ]));
   });
@@ -8013,14 +8026,17 @@ function rPJDash(c,mk){
     var ebitda=lucroLiq+impostosPJ;
     var margemEbitda=fat>0?ebitda/fat*100:0;
     var finRow1=[
+      kpiCard({l:"Faturamento total",v:R(fat),s:"vendas e produção reconhecidas",col:"#059669",tip:"Mostra tudo que o negócio vendeu/realizou no período, mesmo que parte ainda não tenha sido recebida.",onclick:function(){var rows=revenueEvents.slice().sort(function(a,b){return(a.date||"").localeCompare(b.date||"")}).map(function(e){return[((e.date||"").split("-").reverse().join("/"))+" · "+e.label,R(e.amount),"#059669"]});rows.push(["Total faturado",R(fat),"#059669"]);openReport("💰 Faturamento total",rows)}}),
       kpiCard({l:"Lucro Líquido",v:R(lucroLiq),s:fat>0?margem.toFixed(1)+"% do faturamento":"",col:lucroLiq>=0?"#059669":"#dc2626",
         tip:"Quanto sobrou para a empresa após pagar TODAS as despesas. É o indicador mais importante.",
-        onclick:function(){openReport("💎 Composição do Lucro",[["Faturamento bruto",R(fat),"#059669"],["(-) Despesas fixas","-"+R(fixas),"#dc2626"],["(-) Despesas variáveis","-"+R(variaveis),"#f59e0b"],["(-) Pró-labore",pL>0?"-"+R(pL):R(0),"#6b7280"],["= Lucro líquido",R(lucroLiq),lucroLiq>=0?"#059669":"#dc2626"]])}}),
+        onclick:function(){openReport("💎 Composição do Lucro",[["Faturamento total",R(fat),"#059669"],["(-) Despesas fixas","-"+R(fixas),"#dc2626"],["(-) Despesas variáveis","-"+R(variaveis),"#f59e0b"],["= Lucro líquido",R(lucroLiq),lucroLiq>=0?"#059669":"#dc2626"]])}}),
       kpiCard({l:"Margem de Lucro",v:margem.toFixed(1)+"%",s:margem>=20?"✓ Saudável":margem>=10?"Regular":"Atenção",col:margem>=20?"#059669":margem>=10?"#f59e0b":"#dc2626",tip:"Quanto sobra de cada R$ 100 faturados. Acima de 20% = saudável.",bar:Math.min(margem,100)}),
       kpiCard({l:"Crescimento",v:pmFat>0?(growth>0?"+":"")+growth.toFixed(1)+"%":"—",s:pmFat?"vs "+R(pmFat)+" mês ant.":"sem histórico",col:growth>=5?"#059669":growth<-5?"#dc2626":"#f59e0b",tip:"Comparação com o mês anterior. Crescimento acima de 5% é expansão."}),
       kpiCard({l:"Meta x Realizado",v:metaFat?Math.round(fat/metaFat*100)+"%":"—",s:metaFat?R(fat)+" de "+R(metaFat):"configure em Metas",col:metaFat&&fat>=metaFat?"#059669":"#C4693A",bar:metaFat?fat/metaFat*100:0,tip:"Percentual da meta mensal atingida.",onclick:function(){openReport("🎯 Meta x Realizado",[["Meta",metaFat?R(metaFat):"—","#374151"],["Realizado",R(fat),fat>=metaFat?"#059669":"#C4693A"],["% atingido",metaFat?Math.round(fat/metaFat*100)+"%":"—",fat>=metaFat?"#059669":"#C4693A"],["Falta",metaFat&&fat<metaFat?R(metaFat-fat):"Meta atingida! 🎉","#f59e0b"]])}})
     ];
     var finRow2=[
+      kpiCard({l:"Atendimentos realizados",v:String(cli),s:"concluídos no período",col:"#4A6741",tip:"Quantidade de atendimentos concluídos no período."}),
+      kpiCard({l:"Serviços realizados",v:String(servicosRealizados),s:"itens efetivamente realizados",col:"#4A6741",tip:"Quantidade de serviços efetivamente realizados. Um único atendimento pode conter mais de um serviço."}),
       kpiCard({l:"Custo por Atendimento",v:cli?R(custoPorAtend):"—",s:"média geral",col:"#dc2626",tip:"Despesas totais ÷ atendimentos. Se maior que o ticket médio, a operação está no prejuízo.",onclick:function(){openReport("⚡ Custo por Atendimento",[["Despesas totais",R(tD),"#dc2626"],["Atendimentos",String(cli)],["Custo médio",R(custoPorAtend),"#dc2626"],["Ticket médio",R(ticket),"#059669"],["Margem por atend.",R(ticket-custoPorAtend),ticket>custoPorAtend?"#059669":"#dc2626"]])}}),
       kpiCard({l:"Despesa % Faturamento",v:fat?despPct.toFixed(1)+"%":"—",s:despPct<50?"Controlado":despPct<70?"Regular":"Pesado",col:despPct<50?"#059669":despPct<70?"#f59e0b":"#dc2626",tip:"% do faturamento consumido por despesas. Abaixo de 50% = saudável.",onclick:function(){openReport("📊 Despesas x Fat.",[["Faturamento",R(fat),"#059669"],["Despesas fixas",R(fixas)+" ("+( fat?((fixas/fat)*100).toFixed(1):0 )+"%)","#dc2626"],["Despesas variáveis",R(variaveis)+" ("+(fat?((variaveis/fat)*100).toFixed(1):0)+"%)","#f59e0b"],["Total",R(tD)+" ("+despPct.toFixed(1)+"%)","#dc2626"],["Sobra",R(lucroLiq)+" ("+margem.toFixed(1)+"%)","#059669"]])}}),
       kpiCard({l:"Ponto de Equilíbrio",v:breakEven?(breakEven+" atend."):"—",s:breakEven?(cli>=breakEven?"✓ Coberto":"faltam "+(breakEven-cli)):"",col:cli>=breakEven&&breakEven?"#059669":"#f59e0b",tip:"Quantos atendimentos cobrem todas as despesas. Acima disso = lucro puro."})
@@ -8028,7 +8044,7 @@ function rPJDash(c,mk){
     var finRow3=[
       kpiCard({l:"Lucro Bruto",v:R(lucroBruto),s:fat>0?margemBruta.toFixed(1)+"% do faturamento":"",col:lucroBruto>=0?"#059669":"#dc2626",
         tip:"Faturamento menos os custos diretos do serviço (insumos e mão de obra). Mostra quanto sobra antes das despesas operacionais como aluguel e marketing.",
-        onclick:function(){openReport("📈 Composição do Lucro Bruto",[["Faturamento bruto",R(fat),"#059669"],["(-) Custos diretos (insumos, mão de obra)","-"+R(custosDiretos),"#dc2626"],["= Lucro bruto",R(lucroBruto),lucroBruto>=0?"#059669":"#dc2626"],["Margem bruta",margemBruta.toFixed(1)+"%","#4A6741"]])}}),
+        onclick:function(){openReport("📈 Composição do Lucro Bruto",[["Faturamento total",R(fat),"#059669"],["(-) Custos diretos (insumos, mão de obra)","-"+R(custosDiretos),"#dc2626"],["= Lucro bruto",R(lucroBruto),lucroBruto>=0?"#059669":"#dc2626"],["Margem bruta",margemBruta.toFixed(1)+"%","#4A6741"]])}}),
       kpiCard({l:"EBITDA",v:R(ebitda),s:fat>0?margemEbitda.toFixed(1)+"% do faturamento":"",col:ebitda>=0?"#059669":"#dc2626",
         tip:"Lucro antes de juros, impostos, depreciação e amortização. Mostra a geração de caixa da operação, sem o efeito de financiamentos ou de itens contábeis não-caixa.",
         onclick:function(){openReport("💹 Composição do EBITDA",[["Lucro líquido",R(lucroLiq),lucroLiq>=0?"#059669":"#dc2626"],["(+) Impostos","+"+R(impostosPJ),"#4A6741"],["= EBITDA",R(ebitda),ebitda>=0?"#059669":"#dc2626"],["Margem EBITDA",margemEbitda.toFixed(1)+"%","#4A6741"],["Depreciação do mês (informativo)",R(depreciacaoMes),"#9ca3af"]])}}),
@@ -8085,11 +8101,11 @@ function rPJDash(c,mk){
   var prodHdr=ce("div");prodHdr.style.cssText="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;padding:0 0 10px;display:flex;align-items:center;gap:7px;border-bottom:1px solid #a8c4a244;margin-bottom:14px;color:#344d2e";
   prodHdr.innerHTML="<span style='font-size:16px'>📋</span>PRODUTIVIDADE";prodWrap.appendChild(prodHdr);
   var bestSvc="—";var worstSvc="—";
-  if(svcs3.length){var srt=svcs3.map(function(sv){var svR=rec.filter(function(t){return(t.cat||t.category)===sv.name});return{name:sv.name,fat:svR.reduce(function(s,t){return s+t.amount},0)}}).sort(function(a,b){return b.fat-a.fat});if(srt[0]&&srt[0].fat)bestSvc=srt[0].name;if(srt.length>1&&srt[srt.length-1].fat===0&&srt[srt.length-2])worstSvc=srt[srt.length-1].name;}
+  if(svcs3.length){var srt=svcs3.map(function(sv){var rows=serviceProduction.filter(function(x){return String(x.serviceId)===String(sv.id)||x.name===sv.name});return{name:sv.name,fat:rows.reduce(function(s,x){return s+(Number(x.amount)||0)},0),count:rows.length}}).sort(function(a,b){return b.fat-a.fat});if(srt[0]&&(srt[0].fat||srt[0].count))bestSvc=srt[0].name;if(srt.length>1)worstSvc=srt[srt.length-1].name;}
   var eficiencia=ticket>0&&custoPorAtend>0?Math.round((ticket-custoPorAtend)/ticket*100):null;
   prodWrap.appendChild(kpiGrid([
-    kpiCard({l:"Atendimentos",v:String(cli),s:"realizados",col:"#4A6741",tip:"Total de atendimentos concluídos no mês."}),
-    kpiCard({l:"Por Serviço",v:svcs3.length?svcs3.length+" serviços":"—",s:svcs3.length?"ver detalhes abaixo":"cadastre serviços",col:"#4A6741",tip:"Distribuição dos atendimentos por tipo de serviço."}),
+    kpiCard({l:"Atendimentos realizados",v:String(cli),s:"concluídos",col:"#4A6741",tip:"Quantidade de atendimentos concluídos no período."}),
+    kpiCard({l:"Serviços realizados",v:String(servicosRealizados),s:"itens efetivamente executados",col:"#4A6741",tip:"Quantidade de serviços efetivamente realizados. Um atendimento pode conter mais de um serviço."}),
     kpiCard({l:"Taxa Ocupação",v:horasDisp?ocupacao+"%":"—",s:horasDisp?horasTrab.toFixed(1)+"h de "+horasDisp+"h":"configure em Metas",col:ocupacao>=70?"#059669":ocupacao>=50?"#f59e0b":"#9ca3af",bar:ocupacao||0,tip:"% das horas disponíveis efetivamente trabalhadas."}),
     kpiCard({l:"Duração Média",v:avgDuration?avgDuration+"min":"—",s:durationTxs.length?"em "+durationTxs.length+" atend.":"dê baixa para calcular",col:"#4A6741",tip:"Tempo médio de cada atendimento. Essencial para calcular ocupação."})
   ]));
@@ -8103,12 +8119,12 @@ function rPJDash(c,mk){
   if(svcs3.length){
     var svcCard2=ce("div");svcCard2.style.cssText="background:#fff;border:1px solid #a8c4a2;border-radius:12px;padding:12px 14px;margin-bottom:4px";
     var svcH=ce("div");svcH.style.cssText="font-size:11px;font-weight:600;color:#344d2e;margin-bottom:10px";svcH.textContent="📊 Por serviço";svcCard2.appendChild(svcH);
-    var maxF=0;var svcRows=svcs3.map(function(sv){var svR=rec.filter(function(t){return(t.cat||t.category)===sv.name});var svF=svR.reduce(function(s,t){return s+t.amount},0);var svC=svR.reduce(function(s,t){return s+(t.clients||1)},0);if(svF>maxF)maxF=svF;return{name:sv.name,icon:sv.icon||"",fat:svF,cli:svC}}).sort(function(a,b){return b.fat-a.fat});
+    var maxF=0;var svcRows=svcs3.map(function(sv){var svR=serviceProduction.filter(function(x){return String(x.serviceId)===String(sv.id)||x.name===sv.name}),svF=svR.reduce(function(s,x){return s+(Number(x.amount)||0)},0),svC=svR.length;if(svF>maxF)maxF=svF;return{name:sv.name,icon:sv.icon||"",fat:svF,cli:svC}}).sort(function(a,b){return b.fat-a.fat});
     svcRows.forEach(function(sv){
-      if(!sv.fat)return;
+      if(!sv.fat&&!sv.cli)return;
       var r=ce("div");r.style.marginBottom="8px";
       r.innerHTML="<div style='display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px'><span>"+escHTML(sv.icon||"✨")+" "+escHTML(sv.name)+" <span style='color:#9ca3af;font-size:10px'>("+sv.cli+")</span></span><span style='color:#059669'>"+R(sv.fat)+"</span></div>";
-      var bW2=ce("div");bW2.style.cssText="height:3px;background:var(--bd);border-radius:99px";var bF2=ce("div");bF2.style.cssText="height:100%;width:"+Math.round(sv.fat/maxF*100)+"%;background:#4A6741;border-radius:99px";bW2.appendChild(bF2);r.appendChild(bW2);svcCard2.appendChild(r)
+      var bW2=ce("div");bW2.style.cssText="height:3px;background:var(--bd);border-radius:99px";var bF2=ce("div");bF2.style.cssText="height:100%;width:"+(maxF?Math.round(sv.fat/maxF*100):0)+"%;background:#4A6741;border-radius:99px";bW2.appendChild(bF2);r.appendChild(bW2);svcCard2.appendChild(r)
     });prodWrap.appendChild(svcCard2)
   }
   c.appendChild(prodWrap);
@@ -8121,7 +8137,7 @@ function rPJDash(c,mk){
   var growWrap=ce("div");growWrap.style.cssText="background:linear-gradient(135deg,#faf5ff,#fff);border:1.5px solid #c5d9c2;border-radius:16px;padding:14px;margin-bottom:12px";
   var growHdr=ce("div");growHdr.style.cssText="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;padding:0 0 10px;display:flex;align-items:center;gap:7px;border-bottom:1px solid #c5d9c244;margin-bottom:14px;color:#4A6741";
   growHdr.innerHTML="<span style='font-size:16px'>📈</span>CRESCIMENTO";growWrap.appendChild(growHdr);
-  var hist3=[];for(var gi2=5;gi2>=0;gi2--){var hM3=moN-gi2;var hY3=yrN;while(hM3<0){hM3+=12;hY3--}var hMK3=hY3+"-"+String(hM3+1).padStart(2,"0");var hRec3=(D.pj.transactions||[]).filter(function(t){return t.date&&t.date.startsWith(hMK3)&&isRevenueEntry(t)&&!t.pending});var hF3=hRec3.reduce(function(s,t){return s+t.amount},0);var hCl3=hRec3.reduce(function(s,t){return s+(t.clients||1)},0);var hCl=hCl3;hist3.push({mk:hMK3,fat:hF3,cli:hCl,label:MF[hM3].slice(0,3)});}
+  var hist3=[];for(var gi2=5;gi2>=0;gi2--){var hM3=moN-gi2;var hY3=yrN;while(hM3<0){hM3+=12;hY3--}var hMK3=hY3+"-"+String(hM3+1).padStart(2,"0");var hF3=dashboardRevenueTotal(hMK3),hCl=dashboardCompletedAppointments(hMK3).length;hist3.push({mk:hMK3,fat:hF3,cli:hCl,label:MF[hM3].slice(0,3)});}
   var maxHF=Math.max.apply(null,hist3.map(function(h){return h.fat}))||1;
   var chartCard2=ce("div");chartCard2.style.cssText="background:#fff;border:1px solid #c5d9c2;border-radius:10px;padding:12px;margin-top:10px";
   var chartH=ce("div");chartH.style.cssText="font-size:11px;font-weight:600;color:#4A6741;margin-bottom:8px";chartH.textContent="Faturamento — últimos 6 meses";chartCard2.appendChild(chartH);
@@ -8142,10 +8158,10 @@ function rPJDash(c,mk){
   var pmClients=allClients.filter(function(cl){var pmV=(D.pj.transactions||[]).filter(function(t){return t.date&&t.date.startsWith(pmMK)&&String(t.clientId)===String(cl.id)});return pmV.length>0}).length;
   var clientGrowth=pmClients>0?Math.round((allClients.length-pmClients)/pmClients*100):0;
   var svcGrowing=0;var svcFalling=0;
-  if(D.services&&D.services.length){D.services.forEach(function(sv){var curF=(D.pj.transactions||[]).filter(function(t){return t.date&&t.date.startsWith(mk)&&(t.cat||t.category)===sv.name}).reduce(function(s,t){return s+t.amount},0);var pmF=(D.pj.transactions||[]).filter(function(t){return t.date&&t.date.startsWith(pmMK)&&(t.cat||t.category)===sv.name}).reduce(function(s,t){return s+t.amount},0);if(pmF>0&&curF>pmF)svcGrowing++;if(pmF>0&&curF<pmF)svcFalling++})}
+  if(D.services&&D.services.length){var prevProdForGrowth=dashboardCompletedAppointments(pmMK).reduce(function(out,a){return out.concat(dashboardPerformedServiceItems(a))},[]);D.services.forEach(function(sv){var curF=serviceProduction.filter(function(x){return String(x.serviceId)===String(sv.id)||x.name===sv.name}).reduce(function(s,x){return s+(Number(x.amount)||0)},0),pmF=prevProdForGrowth.filter(function(x){return String(x.serviceId)===String(sv.id)||x.name===sv.name}).reduce(function(s,x){return s+(Number(x.amount)||0)},0);if(pmF>0&&curF>pmF)svcGrowing++;if(pmF>0&&curF<pmF)svcFalling++})}
   // Annual comparison
   var yrMK=(yrN-1)+"-"+String(moN+1).padStart(2,"0");
-  var yrFat=(D.pj.transactions||[]).filter(function(t){return t.date&&t.date.startsWith(yrMK)&&isRevenueEntry(t)&&!t.pending}).reduce(function(s,t){return s+t.amount},0);
+  var yrFat=dashboardRevenueTotal(yrMK);
   var yoyGrowth=yrFat>0?(fat-yrFat)/yrFat*100:0;
   var cumFat=hist3.reduce(function(s,h){return s+h.fat},0);
   growWrap.appendChild(kpiGrid([
@@ -8187,20 +8203,21 @@ function rPJDash(c,mk){
     var svcWrap=ce("div");svcWrap.style.cssText="background:linear-gradient(135deg,#fffbeb,#fff);border:1.5px solid #fde68a;border-radius:16px;padding:14px;margin-bottom:12px";
     var svcHdr=ce("div");svcHdr.style.cssText="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;padding:0 0 10px;display:flex;align-items:center;gap:7px;border-bottom:1px solid #fde68a44;margin-bottom:14px;color:#b45309";
     svcHdr.innerHTML="<span style='font-size:16px'>🎯</span>ANÁLISE POR SERVIÇO";svcWrap.appendChild(svcHdr);
+    var serviceProductionPrev=dashboardCompletedAppointments(pmMK).reduce(function(out,a){dashboardPerformedServiceItems(a).forEach(function(x){for(var q=0;q<(Number(x.quantity)||1);q++)out.push(x)});return out},[]);
     var allSvcData=svcCats4.map(function(cat){
       var catName=cat.name||cat.n||"";
-      var svR=rec.filter(function(t){return(t.cat||t.category)===catName});
+      var svR=serviceProduction.filter(function(x){return x.name===catName});
       var svD=desp.filter(function(t){return(t.cat||t.category)===catName});
-      var svF=svR.reduce(function(s,t){return s+t.amount},0);
+      var svF=svR.reduce(function(s,x){return s+(Number(x.amount)||0)},0);
       var svDT=svD.reduce(function(s,t){return s+t.amount},0);
-      var svC=svR.reduce(function(s,t){return s+(t.clients||1)},0);
+      var svC=svR.length;
       var svT=svC>0?svF/svC:0;
       var svL=svF-svDT;
       var svM=svF>0?svL/svF*100:0;
-      var pmSvR=pmRec.filter(function(t){return(t.cat||t.category)===catName});
-      var pmSvF=pmSvR.reduce(function(s,t){return s+t.amount},0);
+      var pmSvR=serviceProductionPrev.filter(function(x){return x.name===catName});
+      var pmSvF=pmSvR.reduce(function(s,x){return s+(Number(x.amount)||0)},0);
       var svG=pmSvF>0?(svF-pmSvF)/pmSvF*100:0;
-      var svRec2=new Set(svR.filter(function(t){return t.clientId&&!t.isFirstTime}).map(function(t){return String(t.clientId)}));
+      var svRec2=new Set(svR.filter(function(x){return x.appointment&&x.appointment.clientId&&!x.appointment.isFirstTime}).map(function(x){return String(x.appointment.clientId)}));
       return{name:catName,icon:cat.icon||cat.i||"",fat:svF,cli:svC,ticket:svT,lucro:svL,margem:svM,growth:svG,recRate:svC>0?Math.round(svRec2.size/svC*100):0,pmFat:pmSvF}
     }).sort(function(a,b){return b.fat-a.fat});
     var svcHdrRow=ce("div");svcHdrRow.style.cssText="display:grid;grid-template-columns:1fr 55px 40px 50px 50px 40px 35px;gap:2px;padding:5px 6px;background:#fffbeb;border-radius:8px;margin-bottom:4px;font-size:7.5px;font-weight:700;color:#b45309;letter-spacing:.3px;text-transform:uppercase;min-width:0;overflow:hidden;width:100%";
