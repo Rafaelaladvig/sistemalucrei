@@ -3507,8 +3507,9 @@ function oLanc(){
     var di=ce("input","inp");di.id="ld";di.placeholder="Descrição opcional";di.style.marginBottom="8px";f.appendChild(di);
     // Category
     var cl=ce("label","lbl");cl.textContent="Categoria";f.appendChild(cl);
-    var cd=ce("div","chips");f.appendChild(cd);
-    chips(cd,cats.length?cats:[{n:"Outros",i:"📦"}],cls,function(catVal){
+    var categoryOptions=cats.length?cats:[{n:"Outros",i:"📦"}],cd;
+    if(!isPF&&tp==="in"){cd=ce("select","sel");cd.id="l-cat-sel";cd.style.marginBottom="8px";categoryOptions.forEach(function(cat){var o=ce("option");o.value=cat.n||cat.name||cat;o.textContent=((cat.i||cat.icon||"💰")+" "+(cat.n||cat.name||cat)).trim();cd.appendChild(o)});f.appendChild(cd)}
+    else{cd=ce("div","chips");cd.id="l-cat-chips";f.appendChild(cd);chips(cd,categoryOptions,cls,function(catVal){
       // Mostrar/esconder campo de serviço quando categoria é especial Insumos (PJ despesa)
       if(!isPF&&tp==="out"){
         var svcRow=gi("l-svc-row");
@@ -3522,7 +3523,7 @@ function oLanc(){
           if(!isInsumo&&gi("l-svc-sel"))gi("l-svc-sel").value="";
         }
       }
-    });
+    })}
     // Campo de serviço para Insumos (PJ despesa)
     if(!isPF&&tp==="out"){
       var svcRow=ce("div");svcRow.id="l-svc-row";svcRow.style.display="none";svcRow.style.marginBottom="8px";
@@ -3549,12 +3550,12 @@ function oLanc(){
     }
     // Payment
     var pl=ce("label","lbl");pl.textContent="Pagamento";f.appendChild(pl);
-    var pd=ce("div","chips");f.appendChild(pd);
-    var payOpts=PAY;
+    var pd=ce("div","chips");pd.id="l-pay-chips";f.appendChild(pd);
+    var payOpts=(!isPF&&tp==="in")?PAY.concat(["Promissória"]):PAY;
     chips(pd,payOpts,cls,function(v){
-      var isCard=v==="Cartão de Crédito";var isCash=v==="Dinheiro"||v==="Saque";
-      gi("lacc")&&(gi("lacc").style.display=isCard||isCash?"none":"block");
-      gi("lcrd")&&(gi("lcrd").style.display=isCard?"block":"none")
+      var isCard=v==="Cartão de Crédito";var isCash=v==="Dinheiro"||v==="Saque";var isPromissory=v==="Promissória";
+      gi("lacc")&&(gi("lacc").style.display=isCard||isCash||isPromissory?"none":"block");
+      gi("lcrd")&&(gi("lcrd").style.display=isCard?"block":"none");gi("l-prom-wrap")&&(gi("l-prom-wrap").style.display=isPromissory?"block":"none")
     });
     // Account
     var al=ce("label","lbl");al.textContent=tp==="in"?"Conta que recebeu":"Conta que pagou";
@@ -3572,6 +3573,11 @@ function oLanc(){
       var ko=ce("option");ko.value="";ko.textContent="Selecione o cartão";ksel.appendChild(ko);
       pC.forEach(function(cd){var o=ce("option");o.value=cd.id;o.textContent=cd.name;ksel.appendChild(o)});
       cdiv.appendChild(ksel);f.appendChild(cdiv)
+    }
+    if(!isPF&&tp==="in"){
+      var promWrap=ce("div");promWrap.id="l-prom-wrap";promWrap.style.cssText="display:none;border:1px solid #fde68a;background:#fffbeb;border-radius:10px;padding:10px 12px;margin-bottom:10px";
+      var promClientLbl=ce("label","lbl");promClientLbl.textContent="Cliente da Promissória*";promWrap.appendChild(promClientLbl);var promClient=ce("select","sel");promClient.id="l-prom-client";promClient.style.marginBottom="8px";var promEmpty=ce("option");promEmpty.value="";promEmpty.textContent="Selecione a cliente";promClient.appendChild(promEmpty);(D.clients||[]).slice().sort(function(a,b){return(a.name||"").localeCompare(b.name||"","pt-BR")}).forEach(function(client){var o=ce("option");o.value=client.id;o.textContent=client.name;promClient.appendChild(o)});promWrap.appendChild(promClient);
+      var dueLbl=ce("label","lbl");dueLbl.textContent="Vencimento*";promWrap.appendChild(dueLbl);var due=ce("input","inp");due.id="l-prom-due";due.type="date";due.value=addMonthsISO(datei.value||tod(),1);due.style.marginBottom="0";promWrap.appendChild(due);f.appendChild(promWrap)
     }
     // Save
     var brow=ce("div","brow");
@@ -3663,23 +3669,25 @@ function svLanc(tp,isPF,cats,cls,pA,pC){
   var amt=parseFloat(gi("lv")?gi("lv").value:0);if(!amt)return;
   var dateVal=gi("l-date")?gi("l-date").value:"";
   if(!dateVal){alert("Informe a data da movimentação.");return}
-  var catDiv=gi("lf").querySelector(".chips");
-  var cat=catDiv?chipVal(catDiv):(cats[0]?cats[0].n||cats[0].name:"Outros");
-  var payDiv=gi("lf").querySelectorAll(".chips")[1];
+  var catSelect=gi("l-cat-sel"),catDiv=gi("l-cat-chips");
+  var cat=catSelect?catSelect.value:catDiv?chipVal(catDiv):(cats[0]?cats[0].n||cats[0].name:"Outros");
+  var payDiv=gi("l-pay-chips");
   var pay=payDiv?chipVal(payDiv):"PIX";if(!pay)pay="PIX";
   var isCard=pay==="Cartão de Crédito";
   var isCash2=pay==="Dinheiro"||pay==="Saque";
+  var isPromissory=tp==="in"&&!isPF&&pay==="Promissória";
   // Conta é opcional somente enquanto o lançamento ainda é futuro/pendente.
   // Movimentações realizadas continuam exigindo a conta efetiva.
   var isCash=pay==="Dinheiro"||pay==="Saque";
   var avEl=gi("lacc")&&gi("lacc").querySelector("select");
   var av=avEl&&!isCard&&!isCash?avEl.value:"";var ap=av.split("|");
   var isFuture=dateVal>tod();
-  if(!isCard&&!isCash&&!isFuture&&!ap[0]){alert("Selecione a conta utilizada nesta movimentação.");return}
+  if(!isCard&&!isCash&&!isPromissory&&!isFuture&&!ap[0]){alert("Selecione a conta utilizada nesta movimentação.");return}
   var cardId=isCard&&gi("lcard")?gi("lcard").value:"";
   var date=gi("l-date")?gi("l-date").value:tod();
   var id=genUUID();
   var desc=gi("ld")?gi("ld").value:"";
+  var promClient=null,promDue="";if(isPromissory){var promClientId=gi("l-prom-client")?gi("l-prom-client").value:"";promClient=(D.clients||[]).find(function(c){return String(c.id)===String(promClientId)});promDue=gi("l-prom-due")?gi("l-prom-due").value:"";if(!promClient){alert("Selecione a cliente da Promissória.");return}if(!promDue){alert("Informe o vencimento da Promissória.");return}}
 
   // Investment category in PF expense → redirect to investment flow
   if(isPF&&tp==="out"&&cat==="Investimento"){oM(false,"m1");oInv();return}
@@ -3732,6 +3740,7 @@ function svLanc(tp,isPF,cats,cls,pA,pC){
   var tx={id:id,type:tp==="in"?"entrada":"saida",category:cat,cat:cat,amount:amt,
     description:desc,payMethod:pay,accountId:ap[0]||"",accountName:ap[1]||"",date:date,fixed:isFixed,
     recorrencia:recorrencia,recurringSeed:recorrencia!=="nao_recorrente"?recSeed:null};
+  if(isPromissory){var promissoryId="prm-manual-"+id;tx.accountId="";tx.accountName="";tx.accrualOnly=true;tx.source="manual_promissory";tx.promissoryId=promissoryId;tx.clientId=promClient.id;tx.clientName=promClient.name;tx.pending=false;tx.recorrencia="nao_recorrente";tx.recurringSeed=null;var prom={id:promissoryId,source:"manual_revenue",clientId:promClient.id,clientName:promClient.name,appointmentId:null,completionId:null,transactionId:id,originalAmount:amt,paidAmount:0,balance:amt,referenceDate:date,createdAt:new Date().toISOString(),description:desc||cat,serviceName:desc||cat,attendanceValue:amt,paidAtCompletion:0,completionPaymentMethod:null,installments:[{id:promissoryId+"-p1",number:1,originalAmount:amt,paidAmount:0,balance:amt,dueDate:promDue,status:promDue<tod()?"Vencida":"Em aberto"}],status:"Em aberto",paymentHistory:[],history:[{id:genUUID(),date:date,kind:"manual_revenue",amount:amt,description:desc||cat}]};refreshPromissory(prom);(D.promissories=D.promissories||[]).push(prom)}
   if(recorrencia!=="nao_recorrente"){tx.scheduledDate=date;tx.recurrenceAnchorLastDay=(recorrencia==="mensal"||recorrencia==="personalizada")&&isLastDayISO(date)}
   if(!isPF)tx.clients=parseInt(gi("lcli")?gi("lcli").value:1)||1;
   // Vincular serviço quando categoria = Insumos (PJ despesa)
@@ -3747,14 +3756,14 @@ function svLanc(tp,isPF,cats,cls,pA,pC){
     var svcRef=(D.services||[]).find(function(s){return String(s.id)===svcVal});
     if(svcRef)tx.serviceName=svcRef.name;
   }
-  if(isFuture)tx.pending=true;
+  if(isFuture&&!isPromissory)tx.pending=true;
   if(isPF)(D.pf.transactions=D.pf.transactions||[]).unshift(tx);
   else(D.pj.transactions=D.pj.transactions||[]).unshift(tx);
   pushTransactionOp(isPF?"pf":"pj",tx.id,"create",tx);
   // Só o campo recorrência cria lançamento futuro — nunca o fixa/variável
   // sozinho. Gera apenas a PRÓXIMA ocorrência (não um calendário inteiro de
   // uma vez), como pendente, até ela mesma ser confirmada/editada.
-  if(recorrencia&&recorrencia!=="nao_recorrente"){
+  if(!isPromissory&&recorrencia&&recorrencia!=="nao_recorrente"){
     var nextDate=proximaDataRecorrencia(date,recorrencia,tx.recurrenceAnchorLastDay);
     if(nextDate){
       var nextTx=Object.assign({},tx,{id:genUUID(),date:nextDate,scheduledDate:nextDate,pending:true,recurringSeed:recSeed});
@@ -7485,7 +7494,8 @@ function completedAppointmentDetailLines(h,cl){
   if(h.discountValue!==undefined)lines.push("Desconto: "+R(h.discountValue)+(h.discountPercent?" ("+h.discountPercent+"%)":""));
   lines.push("Valor final: "+R(finalVal));
   if(paymentMethod)lines.push("Forma de pagamento: "+paymentMethod);
-  if(linkedReceivable||h.machineId){
+  if(h.paymentSplits&&h.paymentSplits.length){lines.push("Divisão do pagamento:");h.paymentSplits.forEach(function(p,i){lines.push("• "+(i+1)+"ª forma: "+(p.label||p.method||"—")+" · "+R(p.grossAmount||0));lines.push("  Recebido em: "+(p.method==="Dinheiro"?"Caixa em dinheiro":p.accountName||"—")+(p.accountContext?" ("+String(p.accountContext).toUpperCase()+")":""));if(p.machineName){lines.push("  Maquininha: "+p.machineName+(p.installmentCount>1?" · "+p.installmentCount+"x":""));lines.push("  Taxas: "+R(p.feeAmount||0)+" · líquido "+R(p.netAmount||0))}})}
+  if((!h.paymentSplits||!h.paymentSplits.length)&&(linkedReceivable||h.machineId)){
     lines.push("Maquininha utilizada: "+(h.machineName||(linkedReceivable&&linkedReceivable.machineName)||"—"));
     var detailInstallments=h.installmentCount||(linkedReceivable&&linkedReceivable.installmentCount)||1;if(detailInstallments>1)lines.push("Parcelamento: "+detailInstallments+"x");
     lines.push("Valor bruto: "+R(h.grossAmount!==undefined?h.grossAmount:((linkedReceivable&&linkedReceivable.grossAmount)||0)));
@@ -7500,7 +7510,7 @@ function completedAppointmentDetailLines(h,cl){
   if(h.paymentMethod==="Pacote"){lines.push("Forma de pagamento: Pacote");lines.push("Valor recebido no atendimento: "+R(0));if(h.packageAnalysisValue!==undefined)lines.push("Valor rateado para análise: "+R(h.packageAnalysisValue));var pkg=(D.servicePackages||[]).find(function(p){return String(p.id)===String(h.packageInstanceId)});if(pkg)lines.push("Pacote de origem: "+pkg.name)}
   if(h.paymentMethod==="Voucher"){var voucher=(D.vouchers||[]).find(function(v){return String(v.id)===String(h.voucherId)});lines.push("Voucher utilizado: "+(h.voucherCode||voucher&&voucher.code||"—"));lines.push("Crédito consumido: "+R(h.voucherUsedAmount||h.finalValue||0));lines.push("Valor recebido no atendimento: "+R(0));if(voucher)lines.push("Saldo atual do Voucher: "+R(voucher.balance))}
   if(h.comboSale&&h.bundleAllocation&&h.bundleAllocation.length){lines.push("Serviços do combo:");h.bundleAllocation.forEach(function(x){lines.push("• "+x.serviceName+" · "+x.quantity+" · rateio "+R(x.allocatedTotal))})}
-  if(receivingName)lines.push("Recebido em: "+receivingName+(receivingCtx?" ("+receivingCtx.toUpperCase()+")":""));
+  if((!h.paymentSplits||!h.paymentSplits.length)&&receivingName)lines.push("Recebido em: "+receivingName+(receivingCtx?" ("+receivingCtx.toUpperCase()+")":""));
   var prom=(D.promissories||[]).find(function(p){return(h.promissoryId&&String(p.id)===String(h.promissoryId))||String(p.appointmentId)===String(h.id)});
   if(prom){refreshPromissory(prom);lines.push("Recebido na conclusão: "+R(h.receivedAtCompletion||0));lines.push("Saldo enviado para Promissória: "+R(prom.originalAmount||0));lines.push("Parcelas da Promissória: "+(prom.installments||[]).length);(prom.installments||[]).forEach(function(x){lines.push("Parcela "+x.number+"/"+prom.installments.length+": "+R(x.originalAmount)+" · vencimento "+x.dueDate.split("-").reverse().join("/")+" · "+x.status)});lines.push("Status da Promissória: "+prom.status);lines.push("Saldo atual da Promissória: "+R(prom.balance))}
   if(h.notas)lines.push("Observação técnica: "+h.notas);
@@ -7852,7 +7862,7 @@ function dashboardRevenueEvents(mk){
   dashboardCompletedAppointments(mk).forEach(function(a){var key=String(a.completionId||a.id);appointmentKeys[String(a.id)]=true;appointmentKeys[key]=true;var voucherUse=a.paymentMethod==="Voucher"||!!a.voucherId;dashboardPerformedServiceItems(a).forEach(function(item){if(item.packageInstanceId||voucherUse)return;var amount=Number(item.amount)||0;if(amount>0)events.push({kind:"service",id:key+"|"+(item.serviceId||item.name),date:a.completedAt||a.date,amount:amount,label:item.name,appointmentId:a.id,clientId:a.clientId})})});
   (D.servicePackages||[]).forEach(function(p){if(!(p.purchaseDate||"").startsWith(mk))return;var id=String(p.id);if(packageKeys[id])return;packageKeys[id]=true;var amount=Number(packageSaleValue(p))||0;if(amount>0)events.push({kind:"package",id:id,date:p.purchaseDate,amount:amount,label:p.name||"Pacote",appointmentId:p.purchaseAppointmentId,clientId:p.clientId})});
   (D.vouchers||[]).forEach(function(v){var date=v.purchaseDate||(v.history||[]).find(function(h){return h.kind==="sale"})&&v.history.find(function(h){return h.kind==="sale"}).date;if(!date||!date.startsWith(mk)||v.draft)return;var id=String(v.id);if(voucherKeys[id])return;voucherKeys[id]=true;var amount=Number(v.originalValue)||Number(v.saleValue)||0;if(amount>0)events.push({kind:"voucher",id:id,date:date,amount:amount,label:"Venda de Voucher "+voucherCodeLabel(v),clientId:v.buyerId})});
-  (D.pj.transactions||[]).forEach(function(t){if(!t||t.type!=="entrada"||!t.date||!t.date.startsWith(mk)||t.pending||t.accrualOnly||t.nonRevenue||!dashboardTxAccountIsPJ(t)||dashboardNonOperatingMovement(t))return;var linked=t.appointmentId||t.completionId||t.servicePackageId||t.packagePaymentId||t.voucherId||t.voucherSaleId;if(linked)return;var source=String(t.source||"");if(source==="promissory_payment"||source==="package_payment"||source==="voucher_sale"||source==="package_activation")return;var amount=Number(t.amount)||0;if(amount>0)events.push({kind:"manual",id:String(t.id),date:t.date,amount:amount,label:t.description||t.category||t.cat||"Receita",clientId:t.clientId})});return events
+  (D.pj.transactions||[]).forEach(function(t){if(!t||t.type!=="entrada"||!t.date||!t.date.startsWith(mk)||t.pending||t.nonRevenue||dashboardNonOperatingMovement(t))return;var source=String(t.source||"");if(source==="manual_promissory"&&t.accrualOnly){var manualPromAmount=Number(t.amount)||0;if(manualPromAmount>0)events.push({kind:"manual",id:String(t.id),date:t.date,amount:manualPromAmount,label:t.description||t.category||t.cat||"Venda em Promissória",clientId:t.clientId});return}if(t.accrualOnly||!dashboardTxAccountIsPJ(t))return;var linked=t.appointmentId||t.completionId||t.servicePackageId||t.packagePaymentId||t.voucherId||t.voucherSaleId;if(linked)return;if(source==="promissory_payment"||source==="package_payment"||source==="voucher_sale"||source==="package_activation")return;var amount=Number(t.amount)||0;if(amount>0)events.push({kind:"manual",id:String(t.id),date:t.date,amount:amount,label:t.description||t.category||t.cat||"Receita",clientId:t.clientId})});return events
 }
 function dashboardRevenueTotal(mk){return Math.round(dashboardRevenueEvents(mk).reduce(function(s,e){return s+e.amount},0)*100)/100}
 function dashboardReceivables(){
@@ -8469,19 +8479,16 @@ function appendVoucherAnalytics(c,mk){var all=(D.vouchers||[]).filter(function(v
 function rPJD(c,mk){
   // ── Dados base ─────────────────────────────────────────────
   var txs=(D.pj.transactions||[]).filter(function(t){return t.date&&t.date.startsWith(mk)});
-  var rec=txs.filter(function(t){return isRevenueEntry(t)&&!t.pending});
-  var desp=txs.filter(function(t){return t.type==="saida"&&!t.pending});
-  var fat=rec.reduce(function(s,t){return s+t.amount},0);
+  var rec=txs.filter(function(t){return isRevenueEntry(t)&&!t.pending}),revenueEvents=dashboardRevenueEvents(mk),completedAppointments=dashboardCompletedAppointments(mk),businessCashEntries=dashboardBusinessCashEntries(mk);
+  var desp=dashboardPaidExpenses(mk);
+  var fat=dashboardRevenueTotal(mk),recebimentosNegocio=businessCashEntries.reduce(function(s,x){return s+(Number(x.tx.amount)||0)},0);
   var tD=desp.reduce(function(s,t){return s+t.amount},0);
-  // Add machine mensalidades as monthly cost
-  var menTot=(D.maquinas||[]).reduce(function(s,m){return s+(m.mensalidade||0)},0);
-  tD+=menTot;
-  var lucro=fat-tD;
+  var lucro=fat-tD,resultadoCaixa=recebimentosNegocio-tD;
   var invTotal=totalInvested(true);
   var saldoContas=totalPJ();
   var plan=(D.pj.plan||{})[mk]||{};
   var meta=plan.revenueGoal||0;
-  var cli=rec.reduce(function(s,t){return s+(t.clients||1)},0);
+  var cli=completedAppointments.length;
 
   // ── 1. HERO ROSA — Fluxo de Caixa ─────────────────────────
   var hero=ce("div","hero hero-main");
@@ -8490,8 +8497,8 @@ function rPJD(c,mk){
     +"<div class='hv'>"+R(saldoContas)+"</div>"
     +"<div style='font-size:11px;opacity:.55;margin-top:-6px;margin-bottom:8px'>Saldo inicial + entradas − saídas</div>"
     +"<div class='hrow' style='grid-template-columns:1fr 1fr'>"
-    +"<div class='hi'><div class='hil'>LUCRO DO MÊS</div><div class='hiv' style='color:"+(lucro>=0?"#86efac":"#fca5a5")+"'>"+R(lucro)+"</div></div>"
-    +"<div class='hi'><div class='hil'>ENTRADAS</div><div class='hiv' style='color:#86efac'>"+R(fat)+"</div></div>"
+    +"<div class='hi'><div class='hil'>RESULTADO DE CAIXA</div><div class='hiv' style='color:"+(resultadoCaixa>=0?"#86efac":"#fca5a5")+"'>"+R(resultadoCaixa)+"</div></div>"
+    +"<div class='hi'><div class='hil'>RECEBIMENTOS</div><div class='hiv' style='color:#86efac'>"+R(recebimentosNegocio)+"</div></div>"
     +"<div class='hi'><div class='hil'>SAÍDAS</div><div class='hiv' style='color:#fca5a5'>"+R(tD)+"</div></div>"
     +"<div class='hi'><div class='hil'>INVESTIDO</div><div class='hiv' style='color:#a8c4a2'>"+R(invTotal)+"</div></div>"
     +"</div>";
@@ -8551,7 +8558,7 @@ function rPJD(c,mk){
   }
   var inCatsL=D.inCats.slice();
   var outCatsL=D.outCats.slice();
-  var recByCat={};rec.forEach(function(t){var k=t.cat||t.category||"Outros";recByCat[k]=(recByCat[k]||0)+t.amount});
+  var recByCat={};revenueEvents.forEach(function(e){var k=e.label||"Outras vendas";recByCat[k]=(recByCat[k]||0)+e.amount});
   var despByCat={};desp.forEach(function(t){var k=t.cat||t.category||"Outros";if(k==="Investimento")return;despByCat[k]=(despByCat[k]||0)+t.amount});
 
   var catRow=ce("div","g2");
@@ -8603,8 +8610,8 @@ function rPJD(c,mk){
   var ticket=cli>0?fat/cli:0;
   var lucroLiqP=fat-tD;
   var margem=fat>0?lucroLiqP/fat*100:0;
-  var durationTxsP=rec.filter(function(t){return t.durationMin>0});
-  var horasTrabP=durationTxsP.reduce(function(s,t){return s+t.durationMin},0)/60;
+  var durationTxsP=completedAppointments.filter(function(a){return Number(a.durationMin)>0});
+  var horasTrabP=durationTxsP.reduce(function(s,a){return s+(Number(a.durationMin)||0)},0)/60;
   var fatHora=horasTrabP>0?fat/horasTrabP:0;
   var precScore=0;var precMsg="";var precSub="";var precCol="#9ca3af";
   if(fat>0&&cli>0){
@@ -8684,7 +8691,7 @@ function rPJD(c,mk){
   var metaData=[
     {l:"Faturamento",real:fat,goal:meta,fmt:function(v){return R(v)}},
     {l:"Atendimentos",real:cli,goal:plan.goalAtend||0,fmt:function(v){return String(v)}},
-    {l:"Novas clientes",real:rec.filter(function(t){return t.isFirstTime}).length,goal:plan.goalNovas||0,fmt:function(v){return String(v)}}
+    {l:"Novas clientes",real:completedAppointments.filter(function(a){return a.isFirstTime}).length,goal:plan.goalNovas||0,fmt:function(v){return String(v)}}
   ];
   var hasGoals=metaData.some(function(m){return m.goal>0});
   if(!hasGoals){
@@ -9803,6 +9810,7 @@ function oBaixa(id){
   bd.appendChild(lbl("Forma de pagamento"));
   var paySel=ce("select","sel");paySel.id="bx-pay-method";paySel.style.marginBottom="8px";
   [["PIX","PIX"],["PIX_MAQUININHA","PIX pela maquininha"],["Dinheiro","Dinheiro"],["DEBITO","Débito"],["CREDITO_VISTA","Crédito à vista"],["CREDITO_PARCELADO","Crédito parcelado"],["VOUCHER","Voucher / Vale-presente"],["PROMISSORIA","Promissória"]].forEach(function(x){var o=ce("option");o.value=x[0];o.textContent=x[1];paySel.appendChild(o)});bd.appendChild(paySel);
+  var primaryAmountWrap=ce("div");primaryAmountWrap.id="bx-pay-amount-wrap";primaryAmountWrap.style.display="none";primaryAmountWrap.appendChild(lbl("Valor nesta forma"));var primaryAmount=ce("input","inp");primaryAmount.id="bx-pay-amount";primaryAmount.type="number";primaryAmount.min="0.01";primaryAmount.step="0.01";primaryAmount.style.marginBottom="8px";primaryAmountWrap.appendChild(primaryAmount);bd.appendChild(primaryAmountWrap);
   var scheduledBundle=(ag.scheduledServices||[]).map(function(x){return(D.services||[]).find(function(s){return String(s.id)===String(x.serviceId)})}).find(function(s){return serviceKind(s)==="package"})||(D.services||[]).find(function(s){return s.name===ag.service&&serviceKind(s)==="package"});if(scheduledBundle){var deferred=ce("option");deferred.value="PACOTE_ABERTO";deferred.textContent=(ag.scheduledServices||[]).length>1?"Ativar Pacote(s) sem receber; cobrar demais serviços":"Ativar pacote sem receber agora";paySel.appendChild(deferred)}
   var deferredPayWrap=ce("div");deferredPayWrap.id="bx-deferred-pay-wrap";deferredPayWrap.style.display="none";deferredPayWrap.appendChild(lbl("Como receber os demais serviços"));var deferredPaySel=ce("select","sel");deferredPaySel.id="bx-deferred-pay-method";[["PIX","PIX"],["Dinheiro","Dinheiro"],["PIX_MAQUININHA","PIX pela maquininha"],["DEBITO","Débito"],["CREDITO_VISTA","Crédito à vista"],["CREDITO_PARCELADO","Crédito parcelado"]].forEach(function(x){var o=ce("option");o.value=x[0];o.textContent=x[1];deferredPaySel.appendChild(o)});deferredPayWrap.appendChild(deferredPaySel);bd.appendChild(deferredPayWrap);
   var promWrap=ce("div");promWrap.id="bx-prom-wrap";promWrap.style.cssText="border:1px solid #fde68a;background:#fffbeb;border-radius:10px;padding:10px 12px;margin-bottom:10px;display:none";
@@ -9829,11 +9837,25 @@ function oBaixa(id){
   (D.maquinas||[]).forEach(function(m){var o=ce("option");o.value=m.id;o.textContent=m.name+(m.accountName?" · "+m.accountName:"");machineSel.appendChild(o)});machineWrap.appendChild(machineSel);
   var installmentWrap=ce("div");installmentWrap.id="bx-installment-wrap";installmentWrap.appendChild(lbl("Número de parcelas"));var installmentSel=ce("select","sel");installmentSel.id="bx-installments";installmentSel.style.marginBottom="8px";installmentWrap.appendChild(installmentSel);machineWrap.appendChild(installmentWrap);
   var machinePreview=ce("div");machinePreview.id="bx-machine-preview";machinePreview.style.cssText="font-size:11px;color:#6b7280;background:#f9fafb;border-radius:8px;padding:8px 10px;margin-bottom:8px;display:none";machineWrap.appendChild(machinePreview);bd.appendChild(machineWrap);
+  var addPaymentBtn=ce("button","btn bou");addPaymentBtn.type="button";addPaymentBtn.id="bx-add-payment";addPaymentBtn.style.cssText="width:100%;font-size:11.5px;margin:2px 0 10px";addPaymentBtn.textContent="+ Adicionar outra forma de pagamento";bd.appendChild(addPaymentBtn);
+  var splitWrap=ce("div");splitWrap.id="bx-split-wrap";splitWrap.style.cssText="display:none;border:1px solid #d7e5d3;background:#f7fbf6;border-radius:11px;padding:11px 12px;margin-bottom:10px";
+  var splitHead=ce("div");splitHead.style.cssText="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px";var splitTitle=ce("b");splitTitle.style.cssText="font-size:12px;color:#344d2e";splitTitle.textContent="Segunda forma de pagamento";var removePayment=ce("button");removePayment.type="button";removePayment.textContent="Remover";removePayment.style.cssText="border:0;background:transparent;color:#dc2626;font:600 10px Poppins,sans-serif;cursor:pointer";splitHead.appendChild(splitTitle);splitHead.appendChild(removePayment);splitWrap.appendChild(splitHead);
+  splitWrap.appendChild(lbl("Forma de pagamento"));var pay2Sel=ce("select","sel");pay2Sel.id="bx-pay2-method";[["PIX","PIX"],["Dinheiro","Dinheiro"],["PIX_MAQUININHA","PIX pela maquininha"],["DEBITO","Débito"],["CREDITO_VISTA","Crédito à vista"],["CREDITO_PARCELADO","Crédito parcelado"]].forEach(function(x){var o=ce("option");o.value=x[0];o.textContent=x[1];pay2Sel.appendChild(o)});pay2Sel.style.marginBottom="8px";splitWrap.appendChild(pay2Sel);
+  splitWrap.appendChild(lbl("Valor nesta forma"));var pay2Amount=ce("input","inp");pay2Amount.id="bx-pay2-amount";pay2Amount.type="number";pay2Amount.min="0.01";pay2Amount.step="0.01";pay2Amount.style.marginBottom="8px";splitWrap.appendChild(pay2Amount);
+  var pay2PixWrap=ce("div");pay2PixWrap.id="bx-pay2-pix-wrap";pay2PixWrap.appendChild(lbl("Conta de recebimento"));var pay2Account=ce("select","sel");pay2Account.id="bx-pay2-account";var pay2Empty=ce("option");pay2Empty.value="";pay2Empty.textContent="Selecione a conta";pay2Account.appendChild(pay2Empty);pixAccounts.forEach(function(a){var o=ce("option");o.value=a.id;o.textContent=a.name+" · "+accountContext(a).toUpperCase()+" · "+R(accBal(a.id));pay2Account.appendChild(o)});pay2PixWrap.appendChild(pay2Account);splitWrap.appendChild(pay2PixWrap);
+  var pay2MachineWrap=ce("div");pay2MachineWrap.id="bx-pay2-machine-wrap";pay2MachineWrap.appendChild(lbl("Maquininha utilizada"));var pay2Machine=ce("select","sel");pay2Machine.id="bx-pay2-machine";var pay2MachineEmpty=ce("option");pay2MachineEmpty.value="";pay2MachineEmpty.textContent="Selecione a maquininha";pay2Machine.appendChild(pay2MachineEmpty);(D.maquinas||[]).forEach(function(m){var o=ce("option");o.value=m.id;o.textContent=m.name+(m.accountName?" · "+m.accountName:"");pay2Machine.appendChild(o)});pay2MachineWrap.appendChild(pay2Machine);var pay2InstallWrap=ce("div");pay2InstallWrap.id="bx-pay2-installment-wrap";pay2InstallWrap.appendChild(lbl("Número de parcelas"));var pay2Installments=ce("select","sel");pay2Installments.id="bx-pay2-installments";pay2InstallWrap.appendChild(pay2Installments);pay2MachineWrap.appendChild(pay2InstallWrap);splitWrap.appendChild(pay2MachineWrap);
+  var splitSummary=ce("div");splitSummary.id="bx-split-summary";splitSummary.style.cssText="font-size:11px;font-weight:600;color:#4b5563;background:#fff;border-radius:8px;padding:8px 10px;margin-top:8px";splitWrap.appendChild(splitSummary);bd.appendChild(splitWrap);
   function updatePromissoryUI(){
     var gross=parseFloat(origInp.value)||0,discRaw3=discChk.checked?(parseFloat(discInp.value)||0):0,discVal3=discType==="pct"?gross*(Math.min(100,Math.max(0,discRaw3))/100):Math.min(gross,Math.max(0,discRaw3)),final3=Math.max(0,gross-discVal3),received3=Math.max(0,parseFloat(promReceived.value)||0),balance3=Math.max(0,final3-received3),count3=Math.max(1,parseInt(promCount.value)||1);
     promBalance.textContent="Saldo que ficará na Promissória: "+R(balance3);var oldDates=Array.from(promDates.querySelectorAll("input")).map(function(x){return x.value});promDates.innerHTML="";
     for(var pi=0;pi<count3;pi++){var row=ce("div");row.style.cssText="display:grid;grid-template-columns:70px 1fr;gap:8px;align-items:center;margin-bottom:6px";var tx=ce("span");tx.style.fontSize="11px";tx.textContent="Parcela "+(pi+1);var dt=ce("input","inp");dt.type="date";dt.className="inp bx-prom-due";dt.value=oldDates[pi]||addMonthsISO(promFirst.value||tod(),pi);dt.style.marginBottom="0";row.appendChild(tx);row.appendChild(dt);promDates.appendChild(row)}
   }
+  var splitEnabled=false;
+  function currentCompletionValue(){var gross=parseFloat(origInp.value)||0,raw=discChk.checked?(parseFloat(discInp.value)||0):0,disc=discType==="pct"?gross*(Math.min(100,Math.max(0,raw))/100):Math.min(gross,Math.max(0,raw));return Math.max(0,Math.round((gross-disc)*100)/100)}
+  function renderPay2Installments(){var machine=(D.maquinas||[]).find(function(m){return String(m.id)===String(pay2Machine.value)}),old=pay2Installments.value;pay2Installments.innerHTML="";var empty=ce("option");empty.value="";empty.textContent="Selecione";pay2Installments.appendChild(empty);(machine&&machine.parcelas||[]).slice().sort(function(a,b){return a.n-b.n}).forEach(function(p){var o=ce("option");o.value=p.n;o.textContent=p.n+"x";pay2Installments.appendChild(o)});if(old&&Array.from(pay2Installments.options).some(function(o){return o.value===old}))pay2Installments.value=old}
+  function updateSplitUI(){var special=["VOUCHER","PROMISSORIA","PACOTE_ABERTO"].indexOf(paySel.value)>=0;if(special&&splitEnabled){splitEnabled=false;splitWrap.style.display="none";addPaymentBtn.style.display="none";primaryAmountWrap.style.display="none"}else addPaymentBtn.style.display=special?"none":"block";if(!splitEnabled){primaryAmountWrap.style.display="none";splitWrap.style.display="none";primaryAmount.value=currentCompletionValue().toFixed(2);return}primaryAmountWrap.style.display="block";splitWrap.style.display="block";addPaymentBtn.style.display="none";var method=pay2Sel.value,isMachine=["PIX_MAQUININHA","DEBITO","CREDITO_VISTA","CREDITO_PARCELADO"].indexOf(method)>=0;pay2PixWrap.style.display=method==="PIX"?"block":"none";pay2MachineWrap.style.display=isMachine?"block":"none";pay2InstallWrap.style.display=method==="CREDITO_PARCELADO"?"block":"none";if(method==="CREDITO_PARCELADO")renderPay2Installments();var first=Math.max(0,parseFloat(primaryAmount.value)||0),second=Math.max(0,parseFloat(pay2Amount.value)||0),due=currentCompletionValue(),difference=Math.round((due-first-second)*100)/100;splitSummary.textContent="Total informado: "+R(first+second)+" · "+(Math.abs(difference)<.01?"Valores conferem":difference>0?"Falta distribuir "+R(difference):"Excede em "+R(Math.abs(difference)));splitSummary.style.color=Math.abs(difference)<.01?"#15803d":"#b45309"}
+  addPaymentBtn.onclick=function(){if(["VOUCHER","PROMISSORIA","PACOTE_ABERTO"].indexOf(paySel.value)>=0){alert("A divisão está disponível para PIX, Dinheiro e modalidades de maquininha.");return}splitEnabled=true;var total=currentCompletionValue(),first=Math.round(total/2*100)/100;primaryAmount.value=first.toFixed(2);pay2Amount.value=(total-first).toFixed(2);updateSplitUI();updatePaymentUI()};
+  removePayment.onclick=function(){splitEnabled=false;primaryAmount.value=currentCompletionValue().toFixed(2);pay2Amount.value="";updateSplitUI();updatePaymentUI()};primaryAmount.oninput=updateSplitUI;pay2Amount.oninput=updateSplitUI;pay2Sel.onchange=updateSplitUI;pay2Machine.onchange=function(){renderPay2Installments();updateSplitUI()};pay2Installments.onchange=updateSplitUI;
   function updatePaymentUI(){
     var mixedDeferred=paySel.value==="PACOTE_ABERTO"&&(ag.scheduledServices||[]).length>1,isProm=paySel.value==="PROMISSORIA",isVoucher=paySel.value==="VOUCHER",effectiveMethod=mixedDeferred?deferredPaySel.value:isProm&&parseFloat(promReceived.value)>0?promMethod.value:paySel.value,isCredit=effectiveMethod==="CREDITO_VISTA"||effectiveMethod==="CREDITO_PARCELADO",machinePayment=effectiveMethod==="PIX_MAQUININHA"||effectiveMethod==="DEBITO"||isCredit;
     deferredPayWrap.style.display=mixedDeferred?"block":"none";
@@ -9845,8 +9867,8 @@ function oBaixa(id){
       (maq&&maq.parcelas||[]).slice().sort(function(a,b){return a.n-b.n}).forEach(function(p){var op=ce("option");op.value=p.n;op.textContent=p.n+"x";installmentSel.appendChild(op)});
       if(previousInstallment&&Array.from(installmentSel.options).some(function(o){return o.value===previousInstallment}))installmentSel.value=previousInstallment
     }
-    if(!machinePayment||!maq){machinePreview.style.display="none";return}
-    var gross=parseFloat(origInp.value)||0,discRaw2=discChk.checked?(parseFloat(discInp.value)||0):0,discVal2=discType==="pct"?gross*(Math.min(100,Math.max(0,discRaw2))/100):Math.min(gross,Math.max(0,discRaw2)),base=isProm?Math.max(0,parseFloat(promReceived.value)||0):Math.max(0,gross-discVal2);
+    updateSplitUI();if(!machinePayment||!maq){machinePreview.style.display="none";return}
+    var gross=parseFloat(origInp.value)||0,discRaw2=discChk.checked?(parseFloat(discInp.value)||0):0,discVal2=discType==="pct"?gross*(Math.min(100,Math.max(0,discRaw2))/100):Math.min(gross,Math.max(0,discRaw2)),base=isProm?Math.max(0,parseFloat(promReceived.value)||0):splitEnabled?Math.max(0,parseFloat(primaryAmount.value)||0):Math.max(0,gross-discVal2);
     var installments=effectiveMethod==="CREDITO_PARCELADO"?parseInt(installmentSel.value)||0:1;
     if(effectiveMethod==="CREDITO_PARCELADO"&&!installments){machinePreview.style.display="block";machinePreview.textContent="Selecione o número de parcelas.";return}
     var method=effectiveMethod==="DEBITO"?"debito":effectiveMethod==="PIX_MAQUININHA"?"pix":"credito",automaticAnticipation=!!(isCredit&&maq.antecipacao&&maq.antecipacao.enabled&&maq.antecipacao.mode==="automatica");
@@ -9957,8 +9979,13 @@ function svBaixa(id){
   var requestedPaymentMethod=gi("bx-pay-method")?gi("bx-pay-method").value:"",isDeferredPackage=requestedPaymentMethod==="PACOTE_ABERTO"&&salePackageServices.length>0;
   salePackageServices.forEach(function(x){if(isDeferredPackage)x.deferPackagePayment=true});
   var deferredPackageValue=Math.round(salePackageServices.filter(function(x){return x.deferPackagePayment}).reduce(function(s,x){return s+(Number(x.finalAllocated)||0)},0)*100)/100,immediateFinalValue=Math.max(0,Math.round((finalValue-deferredPackageValue)*100)/100);
-  var isPromissory=requestedPaymentMethod==="PROMISSORIA",isVoucherPayment=requestedPaymentMethod==="VOUCHER",isCoveredOnly=immediateFinalValue<=0&&(performedServices.some(function(x){return!!x.packageInstanceId})||deferredPackageValue>0),receivedAtCompletion=isVoucherPayment||isCoveredOnly?0:isPromissory?Math.max(0,Math.round((parseFloat(gi("bx-prom-received")&&gi("bx-prom-received").value)||0)*100)/100):immediateFinalValue;
-  if(receivedAtCompletion>immediateFinalValue){alert("O valor recebido hoje não pode ser maior que o valor devido nesta conclusão.");return}
+  var isPromissory=requestedPaymentMethod==="PROMISSORIA",isVoucherPayment=requestedPaymentMethod==="VOUCHER",isCoveredOnly=immediateFinalValue<=0&&(performedServices.some(function(x){return!!x.packageInstanceId})||deferredPackageValue>0),splitPaymentEnabled=!!(gi("bx-split-wrap")&&gi("bx-split-wrap").style.display!=="none");
+  if(splitPaymentEnabled&&(isPromissory||isVoucherPayment||isDeferredPackage)){alert("A divisão em duas formas está disponível para PIX, Dinheiro e modalidades de maquininha.");return}
+  var splitPrimaryAmount=splitPaymentEnabled?Math.max(0,Math.round((parseFloat(gi("bx-pay-amount")&&gi("bx-pay-amount").value)||0)*100)/100):0,splitSecondaryAmount=splitPaymentEnabled?Math.max(0,Math.round((parseFloat(gi("bx-pay2-amount")&&gi("bx-pay2-amount").value)||0)*100)/100):0;
+  if(splitPaymentEnabled&&(splitPrimaryAmount<=0||splitSecondaryAmount<=0)){alert("Informe um valor maior que zero para cada forma de pagamento.");return}
+  if(splitPaymentEnabled&&Math.abs(splitPrimaryAmount+splitSecondaryAmount-immediateFinalValue)>.009){alert("A soma das duas formas precisa ser exatamente "+R(immediateFinalValue)+".");return}
+  var receivedAtCompletion=isVoucherPayment||isCoveredOnly?0:isPromissory?Math.max(0,Math.round((parseFloat(gi("bx-prom-received")&&gi("bx-prom-received").value)||0)*100)/100):splitPaymentEnabled?splitPrimaryAmount:immediateFinalValue,totalReceivedAtCompletion=splitPaymentEnabled?Math.round((splitPrimaryAmount+splitSecondaryAmount)*100)/100:receivedAtCompletion;
+  if(totalReceivedAtCompletion>immediateFinalValue){alert("O valor recebido hoje não pode ser maior que o valor devido nesta conclusão.");return}
   var promissoryAmount=isPromissory?Math.max(0,Math.round((immediateFinalValue-receivedAtCompletion)*100)/100):0,paymentMethod=isDeferredPackage&&immediateFinalValue>0?(gi("bx-deferred-pay-method")?gi("bx-deferred-pay-method").value:""):isPromissory&&receivedAtCompletion>0?(gi("bx-prom-method")?gi("bx-prom-method").value:""):requestedPaymentMethod,noImmediatePayment=immediateFinalValue<=0||isVoucherPayment||(isPromissory&&receivedAtCompletion<=0);
   var isCreditPayment=paymentMethod==="CREDITO_VISTA"||paymentMethod==="CREDITO_PARCELADO";
   var isMachinePayment=paymentMethod==="PIX_MAQUININHA"||paymentMethod==="DEBITO"||isCreditPayment;
@@ -9998,7 +10025,15 @@ function svBaixa(id){
     if(!machineDeadlineConfigured||!machineIntervalConfigured){alert("Configure o prazo de recebimento "+(automaticAnticipation?"da antecipação automática":machineMethod==="debito"?"do Débito":machineMethod==="pix"?"do PIX":installmentCount>1?"do Crédito parcelado":"do Crédito à vista")+" no cadastro da maquininha antes de concluir o atendimento.");return}
     machineCalc=calcTaxaMaquina(selectedMachine,receivedAtCompletion,{metodo:machineMethod,parcelas:installmentCount,antecipar:automaticAnticipation});machineDays=Number(machineDeadline);machineIntervalDays=Number(machineIntervalDays)||0
   }
-  var completionId="cpl-"+id+"-"+Date.now(),transactionId=noImmediatePayment?null:genUUID(),receivableId=isMachinePayment?("mrc-"+completionId+"-1"):null,promissoryId=promissoryAmount>0?("prm-"+completionId):null;
+  var splitMethod=null,splitLabel=null,splitAccount=null,splitScope="pj",splitMachine=null,splitMachineCalc=null,splitMachineDays=0,splitMachineInterval=0,splitInstallmentCount=1,splitAutomaticAnticipation=false,splitParcelRule=null,splitIsMachine=false,splitIsCredit=false;
+  if(splitPaymentEnabled){
+    splitMethod=gi("bx-pay2-method")?gi("bx-pay2-method").value:"";splitIsCredit=splitMethod==="CREDITO_VISTA"||splitMethod==="CREDITO_PARCELADO";splitIsMachine=splitMethod==="PIX_MAQUININHA"||splitMethod==="DEBITO"||splitIsCredit;splitLabel=splitMethod==="PIX_MAQUININHA"?"PIX pela maquininha":splitMethod==="DEBITO"?"Débito":splitMethod==="CREDITO_VISTA"?"Crédito à vista":splitMethod==="CREDITO_PARCELADO"?"Crédito parcelado":splitMethod;
+    if(splitMethod==="PIX"){var splitAccountId=gi("bx-pay2-account")?gi("bx-pay2-account").value:"";splitAccount=(D.accounts||[]).find(function(a){return String(a.id)===String(splitAccountId)&&a.type!=="investimento"&&!isCashAccount(a)});if(!splitAccount){alert("Selecione a conta que recebeu a segunda parte por PIX.");return}splitScope=accountContext(splitAccount)==="pf"?"pf":"pj"}
+    else if(splitMethod==="Dinheiro"){splitAccount=(D.accounts||[]).find(isCashAccount)||ensureCashAccount(0);splitScope="pj"}
+    else if(splitIsMachine){var splitMachineId=gi("bx-pay2-machine")?gi("bx-pay2-machine").value:"";splitMachine=(D.maquinas||[]).find(function(m){return String(m.id)===String(splitMachineId)});if(!splitMachine){alert("Selecione a maquininha utilizada na segunda forma de pagamento.");return}splitAccount=(D.accounts||[]).find(function(a){return String(a.id)===String(splitMachine.accountId)&&a.type!=="investimento"&&!isCashAccount(a)});if(!splitAccount){alert("A maquininha da segunda forma não possui uma conta de recebimento válida.");return}splitScope=accountContext(splitAccount)==="pf"?"pf":"pj";splitInstallmentCount=splitMethod==="CREDITO_PARCELADO"?(parseInt(gi("bx-pay2-installments")&&gi("bx-pay2-installments").value)||0):1;if(splitMethod==="CREDITO_PARCELADO"&&!splitInstallmentCount){alert("Selecione o número de parcelas da segunda forma de pagamento.");return}splitParcelRule=splitInstallmentCount>1?(splitMachine.parcelas||[]).find(function(p){return Number(p.n)===splitInstallmentCount}):null;if(splitInstallmentCount>1&&!splitParcelRule){alert("As parcelas da segunda forma não estão configuradas na maquininha.");return}var splitMachineMethod=splitMethod==="DEBITO"?"debito":splitMethod==="PIX_MAQUININHA"?"pix":"credito";splitAutomaticAnticipation=!!(splitIsCredit&&splitMachine.antecipacao&&splitMachine.antecipacao.enabled&&splitMachine.antecipacao.mode==="automatica");var splitDeadline=splitAutomaticAnticipation?splitMachine.antecipacao.prazoDias:splitMachineMethod==="debito"?splitMachine.prazoDebitoDias:splitMachineMethod==="pix"?splitMachine.prazoPixDias:splitInstallmentCount===1?splitMachine.prazoCreditoVistaDias:splitParcelRule.prazoPrimeiraDias;splitMachineInterval=splitParcelRule?splitParcelRule.intervaloDias:0;var splitDeadlineOk=splitDeadline!==undefined&&splitDeadline!==null&&splitDeadline!==""&&Number.isFinite(Number(splitDeadline))&&Number(splitDeadline)>=0,splitIntervalOk=splitInstallmentCount<=1||splitAutomaticAnticipation||(splitMachineInterval!==undefined&&splitMachineInterval!==null&&splitMachineInterval!==""&&Number.isFinite(Number(splitMachineInterval))&&Number(splitMachineInterval)>0);if(!splitDeadlineOk||!splitIntervalOk){alert("Configure o prazo de recebimento da segunda forma na maquininha antes de concluir.");return}splitMachineCalc=calcTaxaMaquina(splitMachine,splitSecondaryAmount,{metodo:splitMachineMethod,parcelas:splitInstallmentCount,antecipar:splitAutomaticAnticipation});splitMachineDays=Number(splitDeadline);splitMachineInterval=Number(splitMachineInterval)||0}
+    else{alert("Selecione uma segunda forma de pagamento válida.");return}
+  }
+  var completionId="cpl-"+id+"-"+Date.now(),transactionId=noImmediatePayment?null:genUUID(),receivableId=isMachinePayment?("mrc-"+completionId+"-1"):null,promissoryId=promissoryAmount>0?("prm-"+completionId):null,splitTransactionId=splitPaymentEnabled?genUUID():null,splitReceivableIds=[],splitTransactionIds=[];
   var packagePerformed=performedServices.filter(function(x){return!!x.packageInstanceId});for(var pvi=0;pvi<packagePerformed.length;pvi++){var pv=packagePerformed[pvi],validPkg=(D.servicePackages||[]).find(function(p){return String(p.id)===String(pv.packageInstanceId)}),validCredit=validPkg&&(validPkg.credits||[]).find(function(cr){return String(cr.serviceId)===String(pv.serviceId)&&Math.max(0,(cr.original||0)-(cr.used||0)-(cr.forfeited||0))>0});if(!validCredit){alert("O crédito de pacote para "+pv.name+" não está mais disponível.");return}}
   var promCount=0,promDueValues=[];if(promissoryAmount>0){promCount=Math.max(1,parseInt(gi("bx-prom-count")&&gi("bx-prom-count").value)||1);promDueValues=Array.from(document.querySelectorAll("#bx-prom-dates .bx-prom-due")).map(function(x){return x.value});if(promDueValues.length!==promCount||promDueValues.some(function(x){return!x})){alert("Informe todas as datas de vencimento da Promissória.");return}}
 
@@ -10012,6 +10047,8 @@ function svBaixa(id){
   var netAmount=isMachinePayment?Math.round(machineCalc.valorLiquido*100)/100:receivedAtCompletion,expectedDate=isMachinePayment?addDaysISO(endDate,machineDays):endDate;
   var receivableCount=isMachinePayment?(automaticAnticipation?1:installmentCount):0,receivableIds=[],transactionIds=[];
   for(var ri=0;ri<receivableCount;ri++){receivableIds.push("mrc-"+completionId+"-"+(ri+1));transactionIds.push(ri===0?transactionId:genUUID())}
+  var splitGrossAmount=splitPaymentEnabled?splitSecondaryAmount:0,splitFeePct=splitIsMachine?splitMachineCalc.taxaVendaPct:0,splitNormalFee=splitIsMachine?Math.round(splitMachineCalc.taxaVenda*100)/100:0,splitAnticipationFee=splitIsMachine?Math.round(splitMachineCalc.taxaAntecip*100)/100:0,splitFeeAmount=splitNormalFee+splitAnticipationFee,splitNetAmount=splitIsMachine?Math.round(splitMachineCalc.valorLiquido*100)/100:splitGrossAmount,splitExpectedDate=splitIsMachine?addDaysISO(endDate,splitMachineDays):endDate,splitReceivableCount=splitIsMachine?(splitAutomaticAnticipation?1:splitInstallmentCount):0;
+  for(var sri=0;sri<splitReceivableCount;sri++){splitReceivableIds.push("mrc-"+completionId+"-split-"+(sri+1));splitTransactionIds.push(sri===0?splitTransactionId:genUUID())}
   var durationMin=0;
   if(ag.time&&endTime){
     var startParts=ag.time.split(":");var endParts=endTime.split(":");
@@ -10019,6 +10056,7 @@ function svBaixa(id){
     if(durationMin<0)durationMin+=1440
   }
   var notasVal=gi("bx-notas")?gi("bx-notas").value.trim():"";
+  var paymentSplits=splitPaymentEnabled?[{method:paymentMethod,label:paymentLabel,grossAmount:receivedAtCompletion,netAmount:netAmount,accountId:receivingAccount&&receivingAccount.id,accountName:receivingAccount&&receivingAccount.name,accountContext:financialScope,machineId:selectedMachine&&selectedMachine.id,machineName:selectedMachine&&selectedMachine.name,feeAmount:feeAmount,installmentCount:installmentCount,transactionId:transactionId,receivableIds:receivableIds},{method:splitMethod,label:splitLabel,grossAmount:splitGrossAmount,netAmount:splitNetAmount,accountId:splitAccount&&splitAccount.id,accountName:splitAccount&&splitAccount.name,accountContext:splitScope,machineId:splitMachine&&splitMachine.id,machineName:splitMachine&&splitMachine.name,feeAmount:splitFeeAmount,installmentCount:splitInstallmentCount,transactionId:splitTransactionId,receivableIds:splitReceivableIds}]:[];
   packagePerformed.forEach(function(x){consumePackageCredit(x.packageInstanceId,x.serviceId,"realized",ag.id,endDate)});
 
   // Atualiza estatísticas de visita da cliente — não é entrada financeira,
@@ -10058,11 +10096,11 @@ function svBaixa(id){
       discountType:discountChecked?discType:null,
       discountValue:discountValue,
       discountPercent:discountPercent,
-       finalValue:finalValue,paymentMethod:isPromissory&&promissoryAmount>0?"Promissória":paymentLabel,receivedAmount:netAmount,receivedAtCompletion:receivedAtCompletion,completionPaymentMethod:isVoucherPayment?"Voucher":receivedAtCompletion>0?paymentLabel:null,promissoryAmount:promissoryAmount,promissoryId:promissoryId,voucherId:selectedVoucher?selectedVoucher.id:null,voucherCode:selectedVoucher?selectedVoucher.code:null,voucherUsedAmount:isVoucherPayment?finalValue:0,
+       finalValue:finalValue,paymentMethod:isPromissory&&promissoryAmount>0?"Promissória":splitPaymentEnabled?"Pagamento dividido":paymentLabel,receivedAmount:splitPaymentEnabled?Math.round((netAmount+splitNetAmount)*100)/100:netAmount,receivedAtCompletion:totalReceivedAtCompletion,completionPaymentMethod:isVoucherPayment?"Voucher":splitPaymentEnabled?"Pagamento dividido":receivedAtCompletion>0?paymentLabel:null,paymentSplits:paymentSplits,promissoryAmount:promissoryAmount,promissoryId:promissoryId,voucherId:selectedVoucher?selectedVoucher.id:null,voucherCode:selectedVoucher?selectedVoucher.code:null,voucherUsedAmount:isVoucherPayment?finalValue:0,
       receivingAccountId:receivingAccount?receivingAccount.id:null,receivingAccountName:receivingAccount?receivingAccount.name:null,receivingAccountContext:receivingAccount?financialScope:null,
       machineId:selectedMachine?selectedMachine.id:null,machineName:selectedMachine?selectedMachine.name:null,
       grossAmount:grossAmount,feePercent:feePct,feeAmount:feeAmount,normalFeeAmount:normalFeeAmount,anticipationFeeAmount:anticipationFeeAmount,netAmount:netAmount,expectedReceiptDate:expectedDate,
-      installmentCount:installmentCount,automaticAnticipation:automaticAnticipation,receiptStatus:isMachinePayment?"previsto":"realizado",receivableId:receivableId,receivableIds:receivableIds,transactionIds:transactionIds,
+      installmentCount:installmentCount,automaticAnticipation:automaticAnticipation,receiptStatus:isMachinePayment||splitIsMachine?"previsto":"realizado",receivableId:receivableId,receivableIds:receivableIds.concat(splitReceivableIds),transactionIds:(transactionIds.length?transactionIds:(transactionId?[transactionId]:[])).concat(splitTransactionIds.length?splitTransactionIds:(splitTransactionId?[splitTransactionId]:[])),
       notas:notasVal,bundleType:bundleKind,bundleDefinitionId:bundleDefinition?bundleDefinition.id:(salePackageServices[0]&&(salePackageServices[0].bundleDefinitionId||salePackageServices[0].serviceId))||(saleComboServices[0]&&(saleComboServices[0].bundleDefinitionId||saleComboServices[0].serviceId))||null,bundleDefinitionIds:salePackageServices.concat(saleComboServices).map(function(x){return x.bundleDefinitionId||x.serviceId}),bundleAllocation:bundleAllocation,packageSale:salePackageServices.length>0||bundleKind==="package",comboSale:saleComboServices.length>0||bundleKind==="combo"
     });
   });
@@ -10086,21 +10124,26 @@ function svBaixa(id){
         accountId:receivingAccount.id,accountName:receivingAccount.name,accountContext:financialScope,status:"previsto",createdAt:new Date().toISOString()})
     }
   }
+  if(splitPaymentEnabled&&splitIsMachine){
+    var splitTotalCents=Math.round(splitNetAmount*100),splitBaseCents=Math.floor(splitTotalCents/splitReceivableCount),splitOptionalAnticipation=!!(splitIsCredit&&splitMachine.antecipacao&&splitMachine.antecipacao.enabled&&splitMachine.antecipacao.mode!=="automatica");
+    for(var srix=0;srix<splitReceivableCount;srix++){var splitInstallmentCents=srix===splitReceivableCount-1?splitTotalCents-splitBaseCents*(splitReceivableCount-1):splitBaseCents,splitInstallmentDate=splitAutomaticAnticipation?splitExpectedDate:addDaysISO(splitExpectedDate,srix*splitMachineInterval);(D.machineReceivables=D.machineReceivables||[]).push({id:splitReceivableIds[srix],transactionId:splitTransactionIds[srix],appointmentId:ag.id,completionId:completionId,machineId:splitMachine.id,machineName:splitMachine.name,paymentMethod:splitLabel,serviceName:txCategory,grossAmount:splitGrossAmount,feePercent:splitFeePct,feeAmount:splitFeeAmount,normalFeeAmount:splitNormalFee,anticipationFeeAmount:splitAnticipationFee,netTotal:splitNetAmount,netAmount:splitInstallmentCents/100,installmentNumber:srix+1,installmentCount:splitInstallmentCount,receivableCount:splitReceivableCount,saleDate:endDate,expectedDate:splitInstallmentDate,anticipationMode:splitAutomaticAnticipation?"automatica":splitOptionalAnticipation?"opcional":"nenhuma",anticipationAvailable:splitOptionalAnticipation,anticipationType:splitOptionalAnticipation?splitMachine.antecipacao.tipo:null,anticipationRate:splitOptionalAnticipation?splitMachine.antecipacao.taxa:0,anticipationDeadlineDays:splitOptionalAnticipation?splitMachine.antecipacao.prazoDias:undefined,accountId:splitAccount.id,accountName:splitAccount.name,accountContext:splitScope,status:"previsto",createdAt:new Date().toISOString()})}
+  }
   if(deferredPackageValue>0){salePackageServices.filter(function(x){return x.deferPackagePayment}).forEach(function(x){var accrualId=genUUID();x.accrualTransactionId=accrualId;var saleTx={id:accrualId,type:"entrada",category:x.name||"Pacote",cat:x.name||"Pacote",amount:x.finalAllocated||0,description:"Ativação de pacote · "+(ag.clientName||"")+" · "+x.name,payMethod:"A receber",accountId:"",accountName:"",date:endDate,clients:1,appointmentId:ag.id,completionId:completionId,source:"package_activation",packageSale:true,bundleType:"package",bundleDefinitionId:x.bundleDefinitionId||x.serviceId,accrualOnly:true};(D.pj.transactions=D.pj.transactions||[]).unshift(saleTx);pushTransactionOp("pj",saleTx.id,"create",saleTx)})}
   if(!isMachinePayment&&!noImmediatePayment){
     var financialTx={id:transactionId,type:"entrada",category:txCategory,cat:txCategory,amount:receivedAtCompletion,
       description:"Atendimento · "+(ag.clientName||"")+" · "+txCategory,payMethod:paymentLabel,
       accountId:receivingAccount.id,accountName:receivingAccount.name,date:endDate,clients:1,
-      appointmentId:ag.id,completionId:completionId,source:"appointment_completion",bundleType:bundleKind,bundleDefinitionId:bundleDefinition?bundleDefinition.id:null};
+      appointmentId:ag.id,completionId:completionId,source:"appointment_completion",paymentSplit:splitPaymentEnabled,bundleType:bundleKind,bundleDefinitionId:bundleDefinition?bundleDefinition.id:null};
     if(financialScope==="pf")(D.pf.transactions=D.pf.transactions||[]).unshift(financialTx);
     else(D.pj.transactions=D.pj.transactions||[]).unshift(financialTx);
     pushTransactionOp(financialScope,financialTx.id,"create",financialTx)
   }
+  if(splitPaymentEnabled&&!splitIsMachine){var splitFinancialTx={id:splitTransactionId,type:"entrada",category:txCategory,cat:txCategory,amount:splitSecondaryAmount,description:"Atendimento · "+(ag.clientName||"")+" · "+txCategory+" · 2ª forma",payMethod:splitLabel,accountId:splitAccount.id,accountName:splitAccount.name,date:endDate,clients:1,appointmentId:ag.id,completionId:completionId,source:"appointment_completion",paymentSplit:true,bundleType:bundleKind,bundleDefinitionId:bundleDefinition?bundleDefinition.id:null};if(splitScope==="pf")(D.pf.transactions=D.pf.transactions||[]).unshift(splitFinancialTx);else(D.pj.transactions=D.pj.transactions||[]).unshift(splitFinancialTx);pushTransactionOp(splitScope,splitFinancialTx.id,"create",splitFinancialTx)}
   salePackageServices.forEach(function(packageItem,packageIndex){
     var definition=(D.services||[]).find(function(s){return String(s.id)===String(packageItem.bundleDefinitionId||packageItem.serviceId)&&serviceKind(s)==="package"});if(!definition)return;
     if((D.servicePackages||[]).some(function(p){return String(p.purchaseAppointmentId)===String(ag.id)&&String(p.definitionServiceId)===String(definition.id)}))return;
     var packageSaleAmount=Math.max(0,Number(packageItem.finalAllocated)||0),allocation=proportionalServiceAllocation(definition.items,packageSaleAmount),purchaseId="spk-"+ag.id+"-"+(packageIndex+1)+"-"+Date.now(),expiry=definition.validityDays?addDaysISO(endDate,definition.validityDays):null,credits=allocation.map(function(x){return{serviceId:x.serviceId,serviceName:x.serviceName,original:x.quantity,used:0,forfeited:0,remaining:x.quantity,unitPrice:x.unitPrice,allocatedTotal:x.allocatedTotal,allocatedUnit:x.allocatedUnit}}),fullValue=allocation.reduce(function(s,x){return s+x.fullAmount},0),deferred=!!packageItem.deferPackagePayment;
-    var purchase={id:purchaseId,definitionServiceId:definition.id,name:definition.name,clientId:ag.clientId,clientName:ag.clientName,purchaseAppointmentId:ag.id,completionId:completionId,transactionId:deferred?packageItem.accrualTransactionId:transactionId,receivableIds:deferred?[]:receivableIds,promissoryId:deferred?null:promissoryId,purchaseDate:endDate,validityDays:definition.validityDays||0,expiryDate:expiry,status:"Ativo",fullValue:fullValue,paidValue:packageSaleAmount,saleValue:packageSaleAmount,amountPaid:deferred?0:packageSaleAmount,balanceDue:deferred?packageSaleAmount:0,financialStatus:deferred?"Não pago":"Pago",discountValue:Math.max(0,fullValue-packageSaleAmount),discountPercent:fullValue?Math.max(0,fullValue-packageSaleAmount)/fullValue*100:0,paymentMethod:deferred?"A receber":isPromissory&&promissoryAmount>0?"Promissória":paymentLabel,credits:credits,paymentHistory:[],history:[{id:genUUID(),date:endDate,kind:"purchase",amount:packageSaleAmount,appointmentId:ag.id,label:deferred?"Pacote iniciado":"Compra do pacote"}]};refreshServicePackage(purchase);refreshPackageFinancial(purchase);(D.servicePackages=D.servicePackages||[]).push(purchase);packageItem.createdPackageInstanceId=purchase.id;
+    var purchase={id:purchaseId,definitionServiceId:definition.id,name:definition.name,clientId:ag.clientId,clientName:ag.clientName,purchaseAppointmentId:ag.id,completionId:completionId,transactionId:deferred?packageItem.accrualTransactionId:transactionId,receivableIds:deferred?[]:receivableIds.concat(splitReceivableIds),promissoryId:deferred?null:promissoryId,purchaseDate:endDate,validityDays:definition.validityDays||0,expiryDate:expiry,status:"Ativo",fullValue:fullValue,paidValue:packageSaleAmount,saleValue:packageSaleAmount,amountPaid:deferred?0:packageSaleAmount,balanceDue:deferred?packageSaleAmount:0,financialStatus:deferred?"Não pago":"Pago",discountValue:Math.max(0,fullValue-packageSaleAmount),discountPercent:fullValue?Math.max(0,fullValue-packageSaleAmount)/fullValue*100:0,paymentMethod:deferred?"A receber":isPromissory&&promissoryAmount>0?"Promissória":splitPaymentEnabled?"Pagamento dividido":paymentLabel,credits:credits,paymentHistory:[],history:[{id:genUUID(),date:endDate,kind:"purchase",amount:packageSaleAmount,appointmentId:ag.id,label:deferred?"Pacote iniciado":"Compra do pacote"}]};refreshServicePackage(purchase);refreshPackageFinancial(purchase);(D.servicePackages=D.servicePackages||[]).push(purchase);packageItem.createdPackageInstanceId=purchase.id;
     if(packageItem.packageSessionServiceId)consumePackageCredit(purchase.id,packageItem.packageSessionServiceId,"realized",ag.id,endDate)
   });
   sv();oM(false,"m1");nav("calend")
@@ -10200,7 +10243,7 @@ function verFichaCliente(clientId){
     events.sort(function(a,b){return(a.date||"").localeCompare(b.date||"")||a.order-b.order});var timeline=ce("div");timeline.style.cssText="border-left:2px solid #e5e7eb;margin-left:8px;padding-left:12px";
     events.forEach(function(ev){var row=ce("div");row.style.cssText="position:relative;display:flex;align-items:center;justify-content:space-between;gap:10px;border:1px solid "+(ev.kind==="service"?"#fecaca":"#bbf7d0")+";background:"+(ev.kind==="service"?"#fff7f7":"#f5fff8")+";border-radius:10px;padding:9px 10px;margin-bottom:8px;cursor:pointer";var dot=ce("span");dot.style.cssText="position:absolute;left:-19px;width:10px;height:10px;border-radius:50%;background:"+(ev.kind==="service"?"#fca5a5":"#86efac")+";border:2px solid #fff";row.appendChild(dot);var left=ce("div");left.style.cssText="min-width:0;font-size:11.5px;color:#4b5563";left.innerHTML="<span style='color:#9ca3af'>"+escHTML((ev.date||"").split("-").reverse().join("/"))+"</span><br><b style='color:"+(ev.kind==="service"?"#b91c1c":"#15803d")+"'>"+escHTML(ev.label)+"</b>"+(ev.overdue?" <span style='font-size:9px;background:#fee2e2;color:#b91c1c;border-radius:8px;padding:2px 6px'>Vencida</span>":"");var value=ce("div");value.style.cssText="font-size:12px;font-weight:700;white-space:nowrap;color:"+(ev.kind==="service"?"#b91c1c":"#15803d");value.textContent=(ev.kind==="service"?"+ ":"− ")+R(ev.amount);row.appendChild(left);row.appendChild(value);
       if(ev.kind==="service"){
-        row.onclick=function(){if(ev.initial)oInitialPromissoryDetail(ev.prom.id,clientId);else oDetalheAg(ev.prom.appointmentId)};
+        row.onclick=function(){if(ev.initial)oInitialPromissoryDetail(ev.prom.id,clientId);else if(ev.prom.appointmentId)oDetalheAg(ev.prom.appointmentId);else oEditPromissoryEntry(ev.prom.id,clientId)};
         var actions=ce("div");actions.style.cssText="display:flex;gap:5px;align-items:center;flex-shrink:0";
         if(ev.prom.balance>0){var receive=ce("button","btn bpj");receive.style.cssText="font-size:10px;padding:5px 8px";receive.textContent="Receber "+R(ev.prom.balance);receive.title="Receber somente o saldo desta Promissória";receive.onclick=function(e){e.stopPropagation();oReceivePromissory(ev.prom.id,clientId)};actions.appendChild(receive)}
         var edit=ce("button","btn bou");edit.style.cssText="font-size:14px;padding:4px 7px";edit.textContent="✏️";edit.title="Editar lançamento";edit.onclick=function(e){e.stopPropagation();oEditPromissoryEntry(ev.prom.id,clientId)};actions.appendChild(edit);
@@ -10242,11 +10285,12 @@ function svEditPromissoryEntry(id,clientId){
   var amount=Math.round((parseFloat(gi("pep-amount").value)||0)*100)/100,description=gi("pep-description").value.trim(),dueDates=Array.from(document.querySelectorAll("#m1b .pep-due")).map(function(x){return x.value});if(amount<=0||!description||!dueDates.length||dueDates.some(function(x){return!x})){alert("Informe descrição, valor e todos os vencimentos.");return}
   if(amount<promissoryPaymentsTotal(p)){alert("O valor devido não pode ser menor que o total já recebido de "+R(promissoryPaymentsTotal(p))+".");return}
   p.description=description;p.serviceName=description;if(p.source==="initial_balance"){p.referenceDate=dueDates[0];p.createdAt=dueDates[0]+"T12:00:00";if((p.history||[])[0]){p.history[0].date=dueDates[0];p.history[0].amount=amount;p.history[0].description=description}}rebuildPromissoryInstallments(p,amount,dueDates);
+  if(p.source==="manual_revenue"&&p.transactionId){var linkedTx=(D.pj.transactions||[]).find(function(t){return String(t.id)===String(p.transactionId)});if(linkedTx){linkedTx.amount=amount;linkedTx.description=description;linkedTx.category=description;linkedTx.cat=description;linkedTx.clientId=p.clientId;linkedTx.clientName=p.clientName;syncTransactionUpdate("pj",linkedTx)}}
   D.agenda=(D.agenda||[]).map(function(a){return String(a.id)===String(p.appointmentId)?Object.assign({},a,{promissoryAmount:amount}):a});sv();reopenClientPromissory(clientId)
 }
 function deletePromissoryEntry(id,clientId){
   var p=(D.promissories||[]).find(function(x){return String(x.id)===String(id)});if(!p)return;refreshPromissory(p);var payments=(p.paymentHistory||[]).length;if(!confirm("Excluir este lançamento da Promissória?"+(payments?"\n\nOs "+payments+" recebimento(s) vinculados também serão removidos do extrato, das contas e dos lançamentos.":"")))return;
-  (p.paymentHistory||[]).slice().forEach(function(pay){removePromissoryPaymentFinancials(p,pay)});D.promissories=(D.promissories||[]).filter(function(x){return String(x.id)!==String(id)});D.agenda=(D.agenda||[]).map(function(a){return String(a.id)===String(p.appointmentId)?Object.assign({},a,{promissoryId:null,promissoryAmount:0}):a});sv();reopenClientPromissory(clientId)
+  (p.paymentHistory||[]).slice().forEach(function(pay){removePromissoryPaymentFinancials(p,pay)});if(p.source==="manual_revenue"&&p.transactionId)removePromissoryTransactionById(p.transactionId);D.promissories=(D.promissories||[]).filter(function(x){return String(x.id)!==String(id)});D.agenda=(D.agenda||[]).map(function(a){return String(a.id)===String(p.appointmentId)?Object.assign({},a,{promissoryId:null,promissoryAmount:0}):a});sv();reopenClientPromissory(clientId)
 }
 function promissoryPaymentsTotal(p){return Math.round((p&&p.paymentHistory||[]).reduce(function(s,x){return s+(Number(x.amount)||0)},0)*100)/100}
 function rebuildPromissoryInstallments(p,amount,dueDates){
