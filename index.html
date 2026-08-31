@@ -496,13 +496,18 @@ button,input,select,textarea{font-family:inherit;font-size:14px}
 .db-card.clickable:hover{transform:translateY(-1px)}
 .db-card.wide{grid-column:span 2}.db-card.tall{height:120px}
 .db-card-top{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:6px}
-.db-card-label{font-size:9px;color:#9ca3af;font-weight:600;letter-spacing:.8px;text-transform:uppercase;line-height:1.3}
-.db-card-tip{width:15px;height:15px;border-radius:50%;background:#f3f4f6;color:#9ca3af;font-size:8px;display:flex;align-items:center;justify-content:center;cursor:help;flex-shrink:0;font-weight:700;position:relative;font-style:normal;margin-left:4px;margin-top:-1px}
-.db-card-val{font-size:22px;font-weight:300;line-height:1.1;margin-bottom:3px}
-.db-card-sub{font-size:10px;color:#9ca3af;line-height:1.3}
+.db-card-label{font-family:Poppins,sans-serif;font-size:10px;color:#6b7280;font-weight:600;letter-spacing:.7px;text-transform:uppercase;line-height:1.35}
+.db-card-tip{width:17px;height:17px;padding:0;border:0;border-radius:50%;background:#f1f3f5;color:#7b8190;font-family:Poppins,sans-serif;font-size:9px;line-height:17px;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;font-weight:700;position:relative;font-style:normal;margin-left:6px;margin-top:-1px}
+.db-card-tip:hover{background:#e5e7eb;color:#4b5563}
+.db-card-val{font-family:'Cormorant Garamond',serif;font-size:22px;font-weight:500;line-height:1.1;margin-bottom:3px}
+.db-card-sub{font-family:Poppins,sans-serif;font-size:10px;color:#7b8190;line-height:1.35}
 .db-card-bar{height:2px;background:#f0f0f0;border-radius:99px;overflow:hidden;margin-top:8px}
 .db-card-bar-fill{height:100%;border-radius:99px;transition:width .8s ease}
 .db-card-hint{font-size:8px;color:#a8c4a2;position:absolute;bottom:8px;right:12px;opacity:.7}
+.db-card-primary{height:108px!important;border-color:#e8c8b7!important;box-shadow:0 3px 12px rgba(124,70,42,.07)!important}
+.db-personal-notice{width:100%;border:0;background:#f5f3ff;color:#6d28d9;border-radius:10px;padding:9px 12px;font:600 10px Poppins,sans-serif;text-align:left;cursor:pointer;margin-top:2px}
+.db-personal-notice:hover{background:#ede9fe}
+@media(max-width:480px){.db-grid,.db-grid-3,.db-grid-3-wide{grid-template-columns:1fr!important}.db-card.wide{grid-column:span 1!important}.db-card{min-height:94px!important}.db-card-primary{height:102px!important}}
 .db-tooltip{display:none;position:absolute;bottom:calc(100% + 8px);right:0;background:#1f2937;color:#f9fafb;font-size:11px;font-weight:400;padding:10px 12px;border-radius:10px;width:230px;line-height:1.55;z-index:999;white-space:normal;box-shadow:0 8px 24px rgba(0,0,0,.25)}
 .db-tooltip::after{content:'';position:absolute;top:100%;right:10px;border:5px solid transparent;border-top-color:#1f2937}
 .db-card-tip:hover .db-tooltip,.db-card-tip.open .db-tooltip{display:block}
@@ -6998,7 +7003,7 @@ function rLunaTab(c,mk){
 "Planejamento: na aba Planejamento defina limites de gasto por categoria do negócio. "+
 "Investimentos: na aba Investimentos registre aportes e resgates do negócio, separados das finanças pessoais. "+
 "Cancelar assinatura: em Configurações, na zona de perigo, toque em Cancelar assinatura, informe o motivo e confirme. "+
-"INDICADORES — explicações simples quando perguntada: Entradas recebidas são todo dinheiro que efetivamente entrou nas contas do negócio no período. Resultado de caixa é entradas recebidas menos despesas fixas e variáveis efetivamente pagas. Faturamento total é tudo que o negócio vendeu ou realizou no período, mesmo que ainda não tenha recebido. Despesas fixas pagas são gastos fixos realmente pagos; despesas variáveis pagas são saídas realizadas que variam com a operação. Lucro líquido é o faturamento total menos as despesas reconhecidas no painel. Margem de lucro é o percentual do faturamento que vira lucro. Meta x realizado compara o faturamento total com a meta definida. Crescimento compara o faturamento total do mês atual com o mês anterior. Custo por atendimento é quanto, em média, cada atendimento concluído custa para o negócio. Ticket médio é o faturamento total dividido pelos atendimentos concluídos. "+
+"INDICADORES — explicações simples quando perguntada: Recebimentos do negócio são valores de vendas realmente recebidos, inclusive quando caíram em conta pessoal com vínculo seguro ao negócio. Recebido em contas PJ é somente a parte que entrou em contas PJ ou no Caixa do negócio. Resultado de caixa é recebimentos do negócio menos despesas fixas e variáveis efetivamente pagas. Faturamento total é tudo que o negócio vendeu ou realizou no período, mesmo que ainda não tenha recebido. Total a receber reúne Promissórias abertas, recebíveis de maquininha previstos e Pacotes com saldo. Despesas fixas pagas são gastos fixos realmente pagos; despesas variáveis pagas são saídas realizadas que variam com a operação. Lucro líquido é o faturamento total menos as despesas reconhecidas no painel. Margem de lucro é o percentual do faturamento que vira lucro. Meta x realizado compara o faturamento total com a meta definida. Crescimento compara o faturamento total do mês atual com o mês anterior. Custo por atendimento é quanto, em média, cada atendimento concluído custa para o negócio. Ticket médio é o faturamento total dividido pelos atendimentos concluídos. "+
 "Você é a central de ajuda oficial do sistema PJ — sempre que a profissional perguntar como fazer algo, explique o caminho real dentro do app.";
   var shorts=isPF?["Como estou esse mês?","Onde gasto mais?","Me dá uma dica","Analise meu saldo"]:["Como está o negócio?","Estou no lucro?","Dica para crescer","Analise meu mês"];
   var lw=ce("div","lw");lw.style.height=(window.innerHeight-120)+"px";
@@ -7824,6 +7829,17 @@ function dashboardTxAccountIsPJ(t){
 }
 function dashboardNonOperatingMovement(t){var txt=[t&&t.source,t&&t.category,t&&t.cat,t&&t.description,t&&t.type].join(" ").toLowerCase();return/transfer|transferência|aporte|empr[eé]stimo/.test(txt)}
 function dashboardCashEntries(mk){return(D.pj.transactions||[]).filter(function(t){return t&&t.type==="entrada"&&t.date&&t.date.startsWith(mk)&&!t.pending&&!t.accrualOnly&&(Number(t.amount)||0)>0&&dashboardTxAccountIsPJ(t)&&!dashboardNonOperatingMovement(t)})}
+function dashboardTransactionIsBusinessReceipt(t,scope){
+  if(!t||t.type!=="entrada"||t.pending||t.accrualOnly||(Number(t.amount)||0)<=0||dashboardNonOperatingMovement(t))return false;
+  if(scope==="pj")return true;
+  var source=String(t.source||"").toLowerCase();
+  return source==="appointment_completion"||source==="promissory_payment"||source==="package_payment"||source==="voucher_sale"||!!(t.appointmentId||t.completionId||t.promissoryId||t.promissoryPaymentId||t.servicePackageId||t.packagePaymentId||t.voucherId||t.voucherSaleId)
+}
+function dashboardBusinessCashEntries(mk){
+  var out=[],seen={};
+  [["pj",(D.pj&&D.pj.transactions)||[]],["pf",(D.pf&&D.pf.transactions)||[]]].forEach(function(group){group[1].forEach(function(t){if(!t||!t.date||!t.date.startsWith(mk)||!dashboardTransactionIsBusinessReceipt(t,group[0]))return;var key=group[0]+"|"+String(t.id||t.transactionId||t.date+"|"+t.amount+"|"+(t.description||""));if(seen[key])return;seen[key]=true;out.push({tx:t,scope:group[0],account:(D.accounts||[]).find(function(a){return String(a.id)===String(t.accountId)})||null})})});return out
+}
+function dashboardPersonalBusinessEntries(mk){return dashboardBusinessCashEntries(mk).filter(function(x){return x.scope==="pf"})}
 function dashboardPaidExpenses(mk){return(D.pj.transactions||[]).filter(function(t){return t&&t.type==="saida"&&t.date&&t.date.startsWith(mk)&&!t.pending&&!t.accrualOnly&&(t.category||t.cat)!=="Investimento"&&(Number(t.amount)||0)>0&&dashboardTxAccountIsPJ(t)&&!dashboardNonOperatingMovement(t)})}
 function dashboardCompletedAppointments(mk){var seen={};return(D.agenda||[]).filter(function(a){var d=a&&(a.completedAt||a.date);if(!a||appointmentStatus(a)!=="concluido"||!d||!d.startsWith(mk))return false;var id=String(a.id||a.completionId||d+"|"+(a.clientId||"")+"|"+(a.time||""));if(seen[id])return false;seen[id]=true;return true})}
 function dashboardPerformedServiceItems(a){
@@ -7839,20 +7855,33 @@ function dashboardRevenueEvents(mk){
   (D.pj.transactions||[]).forEach(function(t){if(!t||t.type!=="entrada"||!t.date||!t.date.startsWith(mk)||t.pending||t.accrualOnly||t.nonRevenue||!dashboardTxAccountIsPJ(t)||dashboardNonOperatingMovement(t))return;var linked=t.appointmentId||t.completionId||t.servicePackageId||t.packagePaymentId||t.voucherId||t.voucherSaleId;if(linked)return;var source=String(t.source||"");if(source==="promissory_payment"||source==="package_payment"||source==="voucher_sale"||source==="package_activation")return;var amount=Number(t.amount)||0;if(amount>0)events.push({kind:"manual",id:String(t.id),date:t.date,amount:amount,label:t.description||t.category||t.cat||"Receita",clientId:t.clientId})});return events
 }
 function dashboardRevenueTotal(mk){return Math.round(dashboardRevenueEvents(mk).reduce(function(s,e){return s+e.amount},0)*100)/100}
+function dashboardReceivables(){
+  var items=[],seen={};
+  (D.promissories||[]).forEach(function(p){refreshPromissory(p);(p.installments||[]).forEach(function(inst){var amount=Number(inst.balance)||0;if(amount<=0)return;var id="prom|"+String(inst.id||p.id+"|"+inst.number);if(seen[id])return;seen[id]=true;items.push({id:id,origin:"Promissória",date:inst.dueDate||p.referenceDate||(p.createdAt||"").slice(0,10),amount:amount,clientId:p.clientId,client:p.clientName||"Cliente",description:p.serviceName||p.description||"Promissória",status:inst.status||p.status||"Em aberto",appointmentId:p.appointmentId,promissoryId:p.id})})});
+  (D.machineReceivables||[]).forEach(function(r){if(r.status==="realizado"||r.status==="liquidado"||r.status==="cancelado")return;var amount=Number(r.netAmount!==undefined?r.netAmount:r.netTotal)||0;if(amount<=0)return;var id="machine|"+String(r.id);if(seen[id])return;seen[id]=true;var ag=(D.agenda||[]).find(function(a){return String(a.id)===String(r.appointmentId)});items.push({id:id,origin:"Maquininha",date:r.expectedDate||r.saleDate,amount:amount,clientId:ag&&ag.clientId,client:(ag&&ag.clientName)||r.clientName||"Cliente",description:r.serviceName||r.description||r.paymentMethod||"Recebível de maquininha",status:r.status||"Previsto",account:r.accountName||r.machineName||"",machine:r.machineName||"",appointmentId:r.appointmentId,receivableId:r.id})});
+  (D.servicePackages||[]).forEach(function(p){refreshPackageFinancial(p);var amount=Number(p.balanceDue)||0;if(amount<=0)return;var id="package|"+String(p.id);if(seen[id])return;seen[id]=true;items.push({id:id,origin:"Pacote",date:p.paymentDueDate||p.dueDate||p.purchaseDate,amount:amount,clientId:p.clientId,client:p.clientName||"Cliente",description:p.name||"Pacote",status:p.financialStatus||"A receber",appointmentId:p.purchaseAppointmentId,servicePackageId:p.id})});
+  return items
+}
+function dashboardReceivableBuckets(items,baseDate){
+  var base=new Date((baseDate||tod())+"T12:00:00"),out={overdue:[],tomorrow:[],days2to15:[],days16to30:[],after30:[],undated:[]};
+  items.forEach(function(x){if(!x.date){out.undated.push(x);return}var days=Math.round((new Date(x.date+"T12:00:00")-base)/86400000);if(days<0)out.overdue.push(x);else if(days===1)out.tomorrow.push(x);else if(days>=2&&days<=15)out.days2to15.push(x);else if(days>=16&&days<=30)out.days16to30.push(x);else if(days>30)out.after30.push(x);else out.overdue.push(x)});return out
+}
 
 function rPJDash(c,mk){
   // ── Data ──────────────────────────────────────────────────────
   var txs=(D.pj.transactions||[]).filter(function(t){return t.date&&t.date.startsWith(mk)&&!t.pending});
-  var entradasRecebidasTx=dashboardCashEntries(mk),desp=dashboardPaidExpenses(mk),revenueEvents=dashboardRevenueEvents(mk),completedAppointments=dashboardCompletedAppointments(mk);
+  var entradasRecebidasTx=dashboardCashEntries(mk),businessCashEntries=dashboardBusinessCashEntries(mk),personalBusinessEntries=dashboardPersonalBusinessEntries(mk),desp=dashboardPaidExpenses(mk),revenueEvents=dashboardRevenueEvents(mk),completedAppointments=dashboardCompletedAppointments(mk);
   var rec=txs.filter(isRevenueEntry); // compatibilidade de relatórios secundários; não alimenta os KPIs centrais
-  var entradasRecebidas=entradasRecebidasTx.reduce(function(s,t){return s+(Number(t.amount)||0)},0);
+  var recebidoContasPJ=entradasRecebidasTx.reduce(function(s,t){return s+(Number(t.amount)||0)},0);
+  var recebimentosNegocio=businessCashEntries.reduce(function(s,x){return s+(Number(x.tx.amount)||0)},0);
+  var recebidoContasPF=personalBusinessEntries.reduce(function(s,x){return s+(Number(x.tx.amount)||0)},0);
   var fat=dashboardRevenueTotal(mk);
   var tD=desp.reduce(function(s,t){return s+t.amount},0);
   var menTot=0; // mensalidade configurada não é pagamento; só entra quando houver transação efetivamente paga
   var fixas=desp.filter(function(t){return t.fixed===true}).reduce(function(s,t){return s+t.amount},0);
   // Compatibilidade legada: fixed ausente sempre foi tratado como variável.
   var variaveis=desp.filter(function(t){return t.fixed!==true}).reduce(function(s,t){return s+t.amount},0);
-  var resultadoCaixa=entradasRecebidas-fixas-variaveis;
+  var resultadoCaixa=recebimentosNegocio-fixas-variaveis;
   var lucroLiq=fat-tD;
   var margem=fat>0?lucroLiq/fat*100:0;
   var cli=completedAppointments.length,servicosRealizados=dashboardServicesRealized(mk),serviceProduction=completedAppointments.reduce(function(out,a){dashboardPerformedServiceItems(a).forEach(function(x){for(var q=0;q<(Number(x.quantity)||1);q++)out.push(x)});return out},[]);
@@ -7908,6 +7937,7 @@ function rPJDash(c,mk){
   var horasDisp=plan.horasDisponiveis||0;
   var ocupacao=horasDisp>0?Math.round(horasTrab/horasDisp*100):0;
   var breakEven=ticket>0?Math.ceil(tD/ticket):0;
+  var receivableItems=dashboardReceivables(),receivableBuckets=dashboardReceivableBuckets(receivableItems,tod()),totalReceivable=receivableItems.reduce(function(s,x){return s+x.amount},0);
 
   // ── HELPERS ───────────────────────────────────────────────────
   var sectionBorderCol=null;
@@ -7934,20 +7964,20 @@ function rPJDash(c,mk){
   // KPI card builder with tooltip and click
   function kpiCard(opts){
     // opts: {l, v, s, col, bar, tip, onclick, wide}
-    var b=ce("div");
+    var b=ce("div","db-card"+(opts.onclick?" clickable":"")+(opts.primary?" db-card-primary":""));
     b.style.cssText="background:#fff;border:1px solid "+(sectionBorderCol||"var(--bd)")+";border-radius:12px;padding:12px 14px;"+(opts.wide?"grid-column:span 2;":"")+(opts.onclick?"cursor:pointer;":"");
     if(opts.onclick){
       b.onmouseover=function(){this.style.boxShadow="0 4px 16px rgba(0,0,0,.08)"};
       b.onmouseout=function(){this.style.boxShadow=""};
       b.onclick=opts.onclick
     }
-    var hdr=ce("div");hdr.style.cssText="display:flex;align-items:center;margin-bottom:5px";
-    var lbl=ce("div");lbl.style.cssText="font-size:9px;color:#9ca3af;font-weight:600;letter-spacing:.8px;text-transform:uppercase";lbl.textContent=opts.l;
+    var hdr=ce("div","db-card-top");
+    var lbl=ce("div","db-card-label");lbl.textContent=opts.l;
     hdr.appendChild(lbl);
-    if(opts.tip)hdr.appendChild(dbTip(opts.tip));
+    if(opts.help||opts.tip){var helpBtn=ce("button","db-card-tip");helpBtn.type="button";helpBtn.textContent="?";helpBtn.setAttribute("aria-label","Entender "+opts.l);helpBtn.onclick=function(e){e.stopPropagation();if(opts.help)opts.help();else openIndicatorHelp(opts.l,opts.tip,"Os registros e valores que atendem à regra atual deste indicador.","Registros fora do período, pendentes ou que não pertencem a esta classificação.",[["Valor neste período",opts.v,opts.col||"#374151"]])};hdr.appendChild(helpBtn)}
     b.appendChild(hdr);
-    var val=ce("div");val.style.cssText="font-size:20px;font-weight:300;color:"+(opts.col||"#3D2B1F");val.textContent=opts.v;b.appendChild(val);
-    if(opts.s){var sub=ce("div");sub.style.cssText="font-size:10px;color:#9ca3af;margin-top:2px";sub.textContent=opts.s;b.appendChild(sub)}
+    var val=ce("div","db-card-val");val.style.color=opts.col||"#3D2B1F";val.textContent=opts.v;b.appendChild(val);
+    if(opts.s){var sub=ce("div","db-card-sub");sub.style.marginTop="2px";sub.textContent=opts.s;b.appendChild(sub)}
     if(opts.onclick){var hint=ce("div");hint.style.cssText="font-size:9px;color:#9ca3af;margin-top:4px;opacity:.7";hint.textContent="↗ clique para detalhes";b.appendChild(hint)}
     if(opts.bar!==undefined){
       var bW=ce("div");bW.style.cssText="height:2px;background:var(--bd);border-radius:99px;margin-top:6px;overflow:hidden";
@@ -7973,47 +8003,32 @@ function rPJDash(c,mk){
     wrap.appendChild(hdr);fn(wrap);c.appendChild(wrap);sectionBorderCol=null
   }
 
-  // ── BLOCO 1: FLUXO DE CAIXA ──────────────────────────────────
-  blockWrap("FLUXO DE CAIXA","💰","#15803d","#f0fff4","#86efac",function(w){
-    var despByCat={};desp.forEach(function(t){var k=t.cat||t.category||"Outros";despByCat[k]=(despByCat[k]||0)+t.amount});
-    var svcs=D.inCats.filter(function(c2){return c2.isService});
-    if(!svcs.length&&D.services&&D.services.length)svcs=D.services.map(function(s){return{name:s.name,icon:s.icon}});
+  function openIndicatorHelp(title,meaning,enters,excludes,rows){
+    var bd=gi("m2b");bd.innerHTML="";var tt=ce("div","mt");tt.textContent=title;bd.appendChild(tt);
+    function part(label,text){var box=ce("div");box.style.cssText="margin-bottom:10px;padding:10px 11px;background:#f9fafb;border-radius:10px;font-size:11px;line-height:1.65;color:#4b5563";var strong=ce("b");strong.style.color="#374151";strong.textContent=label;box.appendChild(strong);var content=ce("div");content.textContent=text;box.appendChild(content);bd.appendChild(box)}
+    part("O que significa",meaning);part("Entra no cálculo",enters);part("Não entra",excludes);
+    var comp=ce("div");comp.style.cssText="border:1px solid var(--bd);border-radius:10px;padding:10px 11px;margin-top:4px";var ct=ce("b");ct.style.cssText="display:block;font-size:11px;margin-bottom:5px";ct.textContent="Como este período foi formado";comp.appendChild(ct);(rows||[]).forEach(function(r){var line=ce("div");line.style.cssText="display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-bottom:1px solid #f3f4f6;font-size:11px";var a=ce("span");a.textContent=r[0];var v=ce("b");v.textContent=r[1];v.style.color=r[2]||"#374151";line.appendChild(a);line.appendChild(v);comp.appendChild(line)});bd.appendChild(comp);var close=ce("button","btn bpj");close.style.cssText="width:100%;margin-top:12px";close.textContent="Entendi";close.onclick=function(){oM(false,"m2")};bd.appendChild(close);oM(true,"m2")
+  }
+  function sumBy(list,keyFn){var out={};list.forEach(function(x){var k=keyFn(x)||"Outros";out[k]=(out[k]||0)+(Number(x.amount!==undefined?x.amount:x.tx&&x.tx.amount)||0)});return out}
+  function rowsFromMap(map,totalLabel,total,col){var rows=Object.keys(map).sort(function(a,b){return map[b]-map[a]}).map(function(k){return[k,R(map[k]),col]});rows.push([totalLabel,R(total),col]);return rows}
+  function openReceivableList(title,list){var records=list.slice().sort(function(a,b){return(a.date||"").localeCompare(b.date||"")}).map(function(x){return{title:(x.client||"Cliente")+" · "+x.description,lines:["Data prevista: "+(x.date?x.date.split("-").reverse().join("/"):"sem data"),"Origem: "+x.origin,"Valor: "+R(x.amount),"Status: "+x.status,(x.account||x.machine)?"Conta/Maquininha: "+(x.account||x.machine):""].filter(Boolean),clientId:x.clientId,appointmentId:x.appointmentId}});openBundleAnalyticsDetail(title,records,"Nenhum valor nesta faixa.")}
 
+  var businessPJEntries=businessCashEntries.filter(function(x){return x.scope==="pj"});
+  var revenueByKind={Serviços:0,Pacotes:0,Combos:0,Vouchers:0,"Outras vendas":0};revenueEvents.forEach(function(e){if(e.kind==="package")revenueByKind.Pacotes+=e.amount;else if(e.kind==="voucher")revenueByKind.Vouchers+=e.amount;else if(e.kind==="service"){var ag=(D.agenda||[]).find(function(a){return String(a.id)===String(e.appointmentId)});if(ag&&ag.comboSale)revenueByKind.Combos+=e.amount;else revenueByKind.Serviços+=e.amount}else revenueByKind["Outras vendas"]+=e.amount});
+  var pjByAccount=sumBy(businessPJEntries,function(x){return x.tx.accountName||(x.account&&x.account.name)||"Conta PJ não identificada"});
+  var businessByAccount=sumBy(businessCashEntries,function(x){var name=x.tx.accountName||(x.account&&x.account.name)||(x.scope==="pf"?"Conta pessoal não identificada":"Conta PJ não identificada");return name+(x.scope==="pf"?" · Pessoal":" · Negócio")});
+  var fixedByCategory=sumBy(desp.filter(function(t){return t.fixed===true}),function(t){return t.cat||t.category||"Outros"});
+  var variableByCategory=sumBy(desp.filter(function(t){return t.fixed!==true}),function(t){return t.cat||t.category||"Outros"});
+
+  // ── BLOCO 1: VISÃO GERAL DO CAIXA ────────────────────────────
+  blockWrap("VISÃO GERAL","◎","#8a4b2b","#fffaf7","#e8c8b7",function(w){
     w.appendChild(kpiGrid([
-      kpiCard({l:"Entradas recebidas",v:R(entradasRecebidas),s:entradasRecebidasTx.length+" movimentações realizadas",col:"#059669",
-        tip:"Mostra todo o dinheiro que efetivamente entrou nas contas do negócio no período, inclusive recebimentos de valores faturados anteriormente.",
-        onclick:function(){
-          var rows=entradasRecebidasTx.slice().sort(function(a,b){return(a.date||"").localeCompare(b.date||"")}).map(function(t){return[((t.date||"").split("-").reverse().join("/"))+" · "+(t.description||t.category||t.cat||"Entrada")+(t.nonRevenue?" · recebimento anterior":""),R(t.amount),"#059669"]});rows.push(["Total recebido",R(entradasRecebidas),"#059669"]);openReport("💰 Entradas recebidas",rows)
-        }}),
-      kpiCard({l:"Despesas fixas pagas",v:R(fixas),s:"efetivamente pagas",col:"#dc2626",
-        tip:"Mostra as despesas fixas que foram realmente pagas no período.",
-        onclick:function(){
-          var rows=[];
-          var fixasByCat={};desp.filter(function(t){return t.fixed}).forEach(function(t){var k=t.cat||t.category||"Outros";fixasByCat[k]=(fixasByCat[k]||0)+t.amount});
-          Object.keys(fixasByCat).sort(function(a,b){return fixasByCat[b]-fixasByCat[a]}).forEach(function(k){rows.push([k,R(fixasByCat[k]),"#dc2626"])});
-          if(!rows.length)rows.push(["Nenhuma despesa fixa registrada","—","#9ca3af"]);
-          openReport("🔒 Despesas fixas pagas",rows,"Somente saídas efetivamente pagas no mês são consideradas.")
-        }}),
-      kpiCard({l:"Despesas variáveis pagas",v:R(variaveis),s:"efetivamente pagas",col:"#f59e0b",
-        tip:"Mostra as despesas variáveis que foram realmente pagas no período.",
-        onclick:function(){
-          var rows=[];
-          var varByCat={};desp.filter(function(t){return !t.fixed}).forEach(function(t){var k=t.cat||t.category||"Outros";varByCat[k]=(varByCat[k]||0)+t.amount});
-          Object.keys(varByCat).sort(function(a,b){return varByCat[b]-varByCat[a]}).forEach(function(k){rows.push([k,R(varByCat[k]),"#f59e0b"])});
-          if(!rows.length)rows.push(["Nenhuma despesa variável registrada","—","#9ca3af"]);
-          openReport("📊 Despesas variáveis pagas",rows,"Registros antigos sem classificação explícita permanecem como variáveis por compatibilidade.")
-        }}),
-      kpiCard({l:"Resultado de caixa",v:R(resultadoCaixa),s:"entradas menos saídas pagas",col:resultadoCaixa>=0?"#0369a1":"#dc2626",
-        tip:"Entradas recebidas menos despesas fixas e variáveis efetivamente pagas.",
-        onclick:function(){
-          openReport("🔵 Resultado de caixa",[
-            ["Entradas recebidas",R(entradasRecebidas),"#059669"],
-            ["Despesas fixas pagas","-"+R(fixas),"#dc2626"],
-            ["Despesas variáveis pagas","-"+R(variaveis),"#f59e0b"],
-            ["= Resultado de caixa",R(resultadoCaixa),resultadoCaixa>=0?"#0369a1":"#dc2626"]
-          ],"Taxas e descontos não são deduzidos novamente quando a entrada liquidada já está líquida.")
-        }})
+      kpiCard({primary:true,l:"Recebimentos do negócio",v:R(recebimentosNegocio),s:"tudo que efetivamente entrou",col:"#059669",help:function(){openIndicatorHelp("Recebimentos do negócio","É todo dinheiro do negócio que efetivamente entrou no período, independentemente de ter sido recebido em conta PJ, conta pessoal ou Caixa em dinheiro.","Recebimentos realizados de serviços e vendas, Promissórias recebidas, Pacotes e Vouchers pagos e recebíveis de maquininha liquidados.","Valores ainda a receber, transações pendentes, transferências entre contas, aportes e empréstimos.",rowsFromMap(businessByAccount,"Total recebido",recebimentosNegocio,"#059669"))},onclick:function(){openReport("💰 Onde o dinheiro entrou",rowsFromMap(businessByAccount,"Total recebido",recebimentosNegocio,"#059669"))}}),
+      kpiCard({primary:true,l:"Despesas fixas pagas",v:R(fixas),s:"pagas no período",col:"#dc2626",help:function(){openIndicatorHelp("Despesas fixas pagas","São os gastos fixos do negócio que foram efetivamente pagos no período.","Saídas PJ realizadas e classificadas como despesas fixas.","Despesas pendentes, variáveis, investimentos e transferências.",rowsFromMap(fixedByCategory,"Total de despesas fixas",fixas,"#dc2626"))},onclick:function(){openReport("📌 Despesas fixas por categoria",rowsFromMap(fixedByCategory,"Total de despesas fixas",fixas,"#dc2626"))}}),
+      kpiCard({primary:true,l:"Despesas variáveis pagas",v:R(variaveis),s:"pagas no período",col:"#d97706",help:function(){openIndicatorHelp("Despesas variáveis pagas","São os gastos variáveis do negócio que foram efetivamente pagos no período.","Saídas PJ realizadas e classificadas como variáveis; registros antigos sem classificação fixa permanecem aqui por compatibilidade.","Despesas pendentes, fixas, investimentos e transferências.",rowsFromMap(variableByCategory,"Total de despesas variáveis",variaveis,"#d97706"))},onclick:function(){openReport("📊 Despesas variáveis por categoria",rowsFromMap(variableByCategory,"Total de despesas variáveis",variaveis,"#d97706"))}}),
+      kpiCard({primary:true,l:"Resultado de caixa",v:R(resultadoCaixa),s:"recebimentos − despesas pagas",col:resultadoCaixa>=0?"#0369a1":"#dc2626",help:function(){openIndicatorHelp("Resultado de caixa","Mostra quanto restou do dinheiro efetivamente recebido depois das despesas fixas e variáveis efetivamente pagas.","Recebimentos reais do negócio, inclusive quando recebidos em conta pessoal.","Faturamento ainda não recebido, despesas pendentes e valores apenas previstos.",[["Recebimentos do negócio",R(recebimentosNegocio),"#059669"],["− Despesas fixas pagas",R(fixas),"#dc2626"],["− Despesas variáveis pagas",R(variaveis),"#d97706"],["= Resultado de caixa",R(resultadoCaixa),resultadoCaixa>=0?"#0369a1":"#dc2626"]])},onclick:function(){openReport("◎ Composição do resultado de caixa",[["Recebimentos do negócio",R(recebimentosNegocio),"#059669"],["− Despesas fixas pagas",R(fixas),"#dc2626"],["− Despesas variáveis pagas",R(variaveis),"#d97706"],["= Resultado de caixa",R(resultadoCaixa),resultadoCaixa>=0?"#0369a1":"#dc2626"]])}})
     ]));
+    if(recebidoContasPF>0){var personalNotice=ce("button","db-personal-notice");personalNotice.type="button";personalNotice.textContent=R(recebidoContasPF)+" do negócio foram recebidos em contas pessoais";personalNotice.onclick=function(){openBundleAnalyticsDetail("Recebimentos do negócio em contas pessoais",personalBusinessEntries.map(function(x){var t=x.tx,ag=(D.agenda||[]).find(function(a){return String(a.id)===String(t.appointmentId)});return{title:(ag&&ag.clientName||t.clientName||"Cliente")+" · "+(t.category||t.cat||"Recebimento"),lines:["Data: "+t.date.split("-").reverse().join("/"),"Origem: "+(t.description||t.source||"Recebimento do negócio"),"Conta pessoal: "+(t.accountName||(x.account&&x.account.name)||"Conta PF"),"Valor: "+R(t.amount)],clientId:ag&&ag.clientId,appointmentId:t.appointmentId}}),"Nenhum recebimento em conta pessoal.")};w.appendChild(personalNotice)}
   });
 
   // ── BLOCO 2: FINANCEIRO ───────────────────────────────────────
@@ -8025,23 +8040,35 @@ function rPJDash(c,mk){
     var depreciacaoMes=totalDepreciacaoMensalPJ();
     var ebitda=lucroLiq+impostosPJ;
     var margemEbitda=fat>0?ebitda/fat*100:0;
+    var promissoriasRecebidas=businessCashEntries.filter(function(x){return x.tx.source==="promissory_payment"}).reduce(function(s,x){return s+(Number(x.tx.amount)||0)},0);
+    var cartaoRecebido=businessCashEntries.filter(function(x){return x.tx.settlementSource==="machine_receivable"||!!x.tx.receivableId}).reduce(function(s,x){return s+(Number(x.tx.amount)||0)},0);
+    var promissoriasAReceber=receivableItems.filter(function(x){return x.origin==="Promissória"}).reduce(function(s,x){return s+x.amount},0);
+    var cartaoAReceber=receivableItems.filter(function(x){return x.origin==="Maquininha"}).reduce(function(s,x){return s+x.amount},0);
+    var machineFeeGroups={};(D.machineReceivables||[]).filter(function(r){return(r.saleDate||"").startsWith(mk)}).forEach(function(r){var key=String(r.completionId||r.promissoryPaymentId||r.packagePaymentId||r.voucherSaleId||r.appointmentId||r.id),fee=Number(r.feeAmount)||((Number(r.normalFeeAmount)||0)+(Number(r.anticipationFeeAmount)||0));machineFeeGroups[key]=Math.max(machineFeeGroups[key]||0,fee)});var descontosMaquininha=Object.keys(machineFeeGroups).reduce(function(s,k){return s+machineFeeGroups[k]},0);
+    var descontosConcedidos=completedAppointments.reduce(function(s,a){return s+(Number(a.discountValue)||0)},0)+(D.servicePackages||[]).filter(function(p){return(p.purchaseDate||"").startsWith(mk)}).reduce(function(s,p){return s+(Number(p.discountValue)||0)},0);
+    var descontosTotais=descontosConcedidos+descontosMaquininha;
+    var faturamentoRows=rowsFromMap(revenueByKind,"Faturamento reconhecido",fat,"#059669");
+    faturamentoRows.push(["Promissórias recebidas no período",R(promissoriasRecebidas),"#0369a1"],["Promissórias a receber",R(promissoriasAReceber),"#b45309"],["Maquininha recebida/liquidada",R(cartaoRecebido),"#0369a1"],["Maquininha a receber",R(cartaoAReceber),"#b45309"],["Taxas de maquininha",R(descontosMaquininha),"#dc2626"],["Descontos concedidos",R(descontosConcedidos),"#dc2626"]);
     var finRow1=[
-      kpiCard({l:"Faturamento total",v:R(fat),s:"vendas e produção reconhecidas",col:"#059669",tip:"Mostra tudo que o negócio vendeu/realizou no período, mesmo que parte ainda não tenha sido recebida.",onclick:function(){var rows=revenueEvents.slice().sort(function(a,b){return(a.date||"").localeCompare(b.date||"")}).map(function(e){return[((e.date||"").split("-").reverse().join("/"))+" · "+e.label,R(e.amount),"#059669"]});rows.push(["Total faturado",R(fat),"#059669"]);openReport("💰 Faturamento total",rows)}}),
+      kpiCard({l:"Faturamento total",v:R(fat),s:"vendas e produção reconhecidas",col:"#059669",help:function(){openIndicatorHelp("Faturamento total","É o valor das vendas e serviços reconhecidos no período, já pelos valores efetivamente vendidos após descontos comerciais.","Serviços realizados, Pacotes, Combos, Vouchers e outras vendas reconhecidas.","Recebimentos posteriores de uma venda já faturada, transferências, aportes e taxas de maquininha como nova receita.",faturamentoRows)},onclick:function(){openReport("💰 Composição do faturamento",faturamentoRows,"Promissórias e maquininha aparecem para mostrar a situação do recebimento. Elas não são somadas novamente ao faturamento quando a venda já foi reconhecida.")}}),
+      kpiCard({l:"Despesas totais",v:R(tD),s:"fixas + variáveis pagas",col:"#dc2626",help:function(){openIndicatorHelp("Despesas totais","É a soma de todas as despesas do negócio efetivamente pagas no período.","Despesas fixas e variáveis realizadas no contexto PJ.","Despesas pendentes, transferências, investimentos e saídas pessoais.",[["Despesas fixas",R(fixas),"#dc2626"],["Despesas variáveis",R(variaveis),"#d97706"],["Total de despesas",R(tD),"#dc2626"]])},onclick:function(){var rows=rowsFromMap(fixedByCategory,"Subtotal fixas",fixas,"#dc2626").concat(rowsFromMap(variableByCategory,"Subtotal variáveis",variaveis,"#d97706"));rows.push(["Total de despesas",R(tD),"#dc2626"]);openReport("📉 Despesas totais",rows)}}),
       kpiCard({l:"Lucro Líquido",v:R(lucroLiq),s:fat>0?margem.toFixed(1)+"% do faturamento":"",col:lucroLiq>=0?"#059669":"#dc2626",
         tip:"Quanto sobrou para a empresa após pagar TODAS as despesas. É o indicador mais importante.",
         onclick:function(){openReport("💎 Composição do Lucro",[["Faturamento total",R(fat),"#059669"],["(-) Despesas fixas","-"+R(fixas),"#dc2626"],["(-) Despesas variáveis","-"+R(variaveis),"#f59e0b"],["= Lucro líquido",R(lucroLiq),lucroLiq>=0?"#059669":"#dc2626"]])}}),
       kpiCard({l:"Margem de Lucro",v:margem.toFixed(1)+"%",s:margem>=20?"✓ Saudável":margem>=10?"Regular":"Atenção",col:margem>=20?"#059669":margem>=10?"#f59e0b":"#dc2626",tip:"Quanto sobra de cada R$ 100 faturados. Acima de 20% = saudável.",bar:Math.min(margem,100)}),
-      kpiCard({l:"Crescimento",v:pmFat>0?(growth>0?"+":"")+growth.toFixed(1)+"%":"—",s:pmFat?"vs "+R(pmFat)+" mês ant.":"sem histórico",col:growth>=5?"#059669":growth<-5?"#dc2626":"#f59e0b",tip:"Comparação com o mês anterior. Crescimento acima de 5% é expansão."}),
-      kpiCard({l:"Meta x Realizado",v:metaFat?Math.round(fat/metaFat*100)+"%":"—",s:metaFat?R(fat)+" de "+R(metaFat):"configure em Metas",col:metaFat&&fat>=metaFat?"#059669":"#C4693A",bar:metaFat?fat/metaFat*100:0,tip:"Percentual da meta mensal atingida.",onclick:function(){openReport("🎯 Meta x Realizado",[["Meta",metaFat?R(metaFat):"—","#374151"],["Realizado",R(fat),fat>=metaFat?"#059669":"#C4693A"],["% atingido",metaFat?Math.round(fat/metaFat*100)+"%":"—",fat>=metaFat?"#059669":"#C4693A"],["Falta",metaFat&&fat<metaFat?R(metaFat-fat):"Meta atingida! 🎉","#f59e0b"]])}})
     ];
     var finRow2=[
-      kpiCard({l:"Atendimentos realizados",v:String(cli),s:"concluídos no período",col:"#4A6741",tip:"Quantidade de atendimentos concluídos no período."}),
-      kpiCard({l:"Serviços realizados",v:String(servicosRealizados),s:"itens efetivamente realizados",col:"#4A6741",tip:"Quantidade de serviços efetivamente realizados. Um único atendimento pode conter mais de um serviço."}),
+      kpiCard({l:"Crescimento",v:pmFat>0?(growth>0?"+":"")+growth.toFixed(1)+"%":"—",s:pmFat?"vs "+R(pmFat)+" mês ant.":"sem histórico",col:growth>=5?"#059669":growth<-5?"#dc2626":"#f59e0b",tip:"Comparação com o mês anterior. Crescimento acima de 5% é expansão."}),
+      kpiCard({l:"Meta x Realizado",v:metaFat?Math.round(fat/metaFat*100)+"%":"—",s:metaFat?R(fat)+" de "+R(metaFat):"configure em Metas",col:metaFat&&fat>=metaFat?"#059669":"#C4693A",bar:metaFat?fat/metaFat*100:0,tip:"Percentual da meta mensal atingida.",onclick:function(){openReport("🎯 Meta x Realizado",[["Meta",metaFat?R(metaFat):"—","#374151"],["Realizado",R(fat),fat>=metaFat?"#059669":"#C4693A"],["% atingido",metaFat?Math.round(fat/metaFat*100)+"%":"—",fat>=metaFat?"#059669":"#C4693A"],["Falta",metaFat&&fat<metaFat?R(metaFat-fat):"Meta atingida! 🎉","#f59e0b"]])}})
+      ,kpiCard({l:"Descontos",v:R(descontosTotais),s:"comerciais + taxas",col:"#d97706",help:function(){openIndicatorHelp("Descontos","Reúne os descontos comerciais concedidos e os custos de taxas das maquininhas no período.","Descontos gravados em atendimentos e Pacotes vendidos, além das taxas de maquininha das vendas do período.","Não altera retroativamente o saldo nem cria uma nova despesa; é uma leitura informativa dos dados já gravados.",[["Descontos concedidos",R(descontosConcedidos),"#d97706"],["Taxas de maquininha",R(descontosMaquininha),"#dc2626"],["Total",R(descontosTotais),"#d97706"]])}}),
+      kpiCard({l:"Valores a receber",v:R(totalReceivable),s:"vendas ainda não recebidas",col:"#b45309",help:function(){var byOrigin=sumBy(receivableItems,function(x){return x.origin});openIndicatorHelp("Valores a receber","São vendas já realizadas que ainda não entraram no caixa.","Promissórias abertas, recebíveis de maquininha e Pacotes com saldo.","Agendamentos sem venda, valores liquidados e saldo disponível de Voucher.",rowsFromMap(byOrigin,"Total a receber",totalReceivable,"#b45309"))},onclick:function(){openReceivableList("Valores a receber",receivableItems)}})
+    ];
+    var finRow3=[
       kpiCard({l:"Custo por Atendimento",v:cli?R(custoPorAtend):"—",s:"média geral",col:"#dc2626",tip:"Despesas totais ÷ atendimentos. Se maior que o ticket médio, a operação está no prejuízo.",onclick:function(){openReport("⚡ Custo por Atendimento",[["Despesas totais",R(tD),"#dc2626"],["Atendimentos",String(cli)],["Custo médio",R(custoPorAtend),"#dc2626"],["Ticket médio",R(ticket),"#059669"],["Margem por atend.",R(ticket-custoPorAtend),ticket>custoPorAtend?"#059669":"#dc2626"]])}}),
       kpiCard({l:"Despesa % Faturamento",v:fat?despPct.toFixed(1)+"%":"—",s:despPct<50?"Controlado":despPct<70?"Regular":"Pesado",col:despPct<50?"#059669":despPct<70?"#f59e0b":"#dc2626",tip:"% do faturamento consumido por despesas. Abaixo de 50% = saudável.",onclick:function(){openReport("📊 Despesas x Fat.",[["Faturamento",R(fat),"#059669"],["Despesas fixas",R(fixas)+" ("+( fat?((fixas/fat)*100).toFixed(1):0 )+"%)","#dc2626"],["Despesas variáveis",R(variaveis)+" ("+(fat?((variaveis/fat)*100).toFixed(1):0)+"%)","#f59e0b"],["Total",R(tD)+" ("+despPct.toFixed(1)+"%)","#dc2626"],["Sobra",R(lucroLiq)+" ("+margem.toFixed(1)+"%)","#059669"]])}}),
       kpiCard({l:"Ponto de Equilíbrio",v:breakEven?(breakEven+" atend."):"—",s:breakEven?(cli>=breakEven?"✓ Coberto":"faltam "+(breakEven-cli)):"",col:cli>=breakEven&&breakEven?"#059669":"#f59e0b",tip:"Quantos atendimentos cobrem todas as despesas. Acima disso = lucro puro."})
     ];
-    var finRow3=[
+    var finRow4=[
       kpiCard({l:"Lucro Bruto",v:R(lucroBruto),s:fat>0?margemBruta.toFixed(1)+"% do faturamento":"",col:lucroBruto>=0?"#059669":"#dc2626",
         tip:"Faturamento menos os custos diretos do serviço (insumos e mão de obra). Mostra quanto sobra antes das despesas operacionais como aluguel e marketing.",
         onclick:function(){openReport("📈 Composição do Lucro Bruto",[["Faturamento total",R(fat),"#059669"],["(-) Custos diretos (insumos, mão de obra)","-"+R(custosDiretos),"#dc2626"],["= Lucro bruto",R(lucroBruto),lucroBruto>=0?"#059669":"#dc2626"],["Margem bruta",margemBruta.toFixed(1)+"%","#4A6741"]])}}),
@@ -8053,9 +8080,24 @@ function rPJDash(c,mk){
         onclick:function(){panel="pj";nav("patrimonio")}})
     ];
     w.appendChild(kpiGrid(finRow1));
-    w.appendChild(kpiGrid3(finRow2));
+    w.appendChild(kpiGrid(finRow2));
     w.appendChild(kpiGrid3(finRow3));
+    w.appendChild(kpiGrid3(finRow4));
 
+  });
+
+  blockWrap("VALORES A RECEBER","⏳","#92400e","#fffbeb","#fcd34d",function(w){
+    function listTotal(list){return list.reduce(function(s,x){return s+x.amount},0)}
+    var byOrigin=sumBy(receivableItems,function(x){return x.origin});
+    w.appendChild(kpiGrid3([
+      kpiCard({l:"Total a receber",v:R(totalReceivable),s:receivableItems.length+" valor(es) em aberto",col:"#b45309",help:function(){openIndicatorHelp("Total a receber","Valores de vendas já realizadas que ainda não entraram no caixa.","Promissórias abertas, maquininha ainda não liquidada e Pacotes com saldo.","Agendamentos, previsões sem venda, valores já recebidos e saldo disponível de Voucher.",rowsFromMap(byOrigin,"Total a receber",totalReceivable,"#b45309"))},onclick:function(){openReceivableList("Total a receber",receivableItems)}}),
+      kpiCard({l:"Vencidos",v:R(listTotal(receivableBuckets.overdue)),s:receivableBuckets.overdue.length+" registro(s)",col:"#dc2626",help:function(){openIndicatorHelp("Valores vencidos","Valores cuja data prevista já chegou ou passou e ainda estão em aberto.","Recebíveis com data até hoje e saldo positivo.","Valores já liquidados e vencimentos futuros.",[["Vencidos / hoje",R(listTotal(receivableBuckets.overdue)),"#dc2626"]])},onclick:function(){openReceivableList("Valores vencidos",receivableBuckets.overdue)}}),
+      kpiCard({l:"A receber amanhã",v:R(listTotal(receivableBuckets.tomorrow)),s:receivableBuckets.tomorrow.length+" registro(s)",col:"#d97706",tip:"Valores com vencimento exatamente amanhã.",onclick:function(){openReceivableList("A receber amanhã",receivableBuckets.tomorrow)}}),
+      kpiCard({l:"Próximos 2 a 15 dias",v:R(listTotal(receivableBuckets.days2to15)),s:receivableBuckets.days2to15.length+" registro(s)",col:"#d97706",tip:"Faixa exclusiva de 2 até 15 dias a partir de hoje.",onclick:function(){openReceivableList("Próximos 2 a 15 dias",receivableBuckets.days2to15)}}),
+      kpiCard({l:"Próximos 16 a 30 dias",v:R(listTotal(receivableBuckets.days16to30)),s:receivableBuckets.days16to30.length+" registro(s)",col:"#0369a1",tip:"Faixa exclusiva de 16 até 30 dias a partir de hoje.",onclick:function(){openReceivableList("Próximos 16 a 30 dias",receivableBuckets.days16to30)}}),
+      kpiCard({l:"Após 30 dias",v:R(listTotal(receivableBuckets.after30)),s:receivableBuckets.after30.length+" registro(s)",col:"#6b7280",tip:"Valores previstos para mais de 30 dias.",onclick:function(){openReceivableList("Após 30 dias",receivableBuckets.after30)}})
+    ]));
+    if(receivableBuckets.undated.length){var note=ce("button","db-personal-notice");note.type="button";note.textContent=receivableBuckets.undated.length+" recebível(is) sem data definida · "+R(listTotal(receivableBuckets.undated));note.onclick=function(){openReceivableList("Recebíveis sem data",receivableBuckets.undated)};w.appendChild(note)}
   });
 
   // ── BLOCO 3: CLIENTES ────────────────────────────────────────
